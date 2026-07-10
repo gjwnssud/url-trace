@@ -1,0 +1,25 @@
+# Build artifacts
+/bin/
+/dist/
+
+# Test & coverage
+*.test
+coverage.out
+coverage.html
+
+# Real capture/policy data — may contain internal URLs; only examples/ ships
+*.har
+!examples/*.har
+result*.json
+policy*.json
+
+# Real SQL export mappings reveal internal schemas/IDs; only the example ships
+sqlexport-config*.json
+!examples/sqlexport-config.example.json
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+.venv/
+.claude/

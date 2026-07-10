@@ -1,0 +1,14 @@
+{
+  "table": "URL_ALLOWLIST",
+  "columns": [
+    { "name": "ID", "value": "{id}", "maxLength": 24 },
+    { "name": "URL_PATTERN", "value": "{pattern}", "maxLength": 1000 },
+    { "name": "LABEL", "value": "{host}{path}", "maxLength": 100 },
+    { "name": "PARTY", "value": "{party}" },
+    { "name": "CONFIDENCE", "value": "{confidence}" },
+    { "name": "GROUP_CODE", "value": "GRP-01" },
+    { "name": "HIT_COUNT", "value": "{count}", "type": "number" },
+    { "name": "FIRST_SEEN_MS", "value": "{firstSeenMs}", "type": "number" },
+    { "name": "REGISTERED_MS", "value": "{nowMs}", "type": "number" }
+  ]
+}
