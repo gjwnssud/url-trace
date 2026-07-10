@@ -1,9 +1,11 @@
 package source
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -46,6 +48,11 @@ type BrowserSource struct {
 	// session into every request.
 	Cookies []string
 	Headers []string
+	// Headful opens a visible browser window and pauses for the operator to log
+	// in manually before capturing. This avoids the duplicate-login session
+	// expiry that injecting a copied cookie can trigger: the capture browser
+	// holds the only session. Requires a display; not usable in headless CI.
+	Headful bool
 }
 
 // NewBrowserSource creates a source that captures the requests made while
@@ -70,6 +77,10 @@ func (s *BrowserSource) Fetch(ctx context.Context, out chan<- model.URLRecord) e
 	allocOpts := chromedp.DefaultExecAllocatorOptions[:]
 	if s.InsecureTLS {
 		allocOpts = append(allocOpts, chromedp.Flag("ignore-certificate-errors", true))
+	}
+	if s.Headful {
+		// Override the default headless flag so a real window opens for login.
+		allocOpts = append(allocOpts, chromedp.Flag("headless", false))
 	}
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(ctx, allocOpts...)
 	defer cancelAlloc()
@@ -98,16 +109,23 @@ func (s *BrowserSource) Fetch(ctx context.Context, out chan<- model.URLRecord) e
 		mu.Unlock()
 	})
 
-	runCtx, cancelRun := context.WithTimeout(browserCtx, s.Timeout)
-	defer cancelRun()
-
 	setup, err := s.setupActions()
 	if err != nil {
 		return err
 	}
-	if err := chromedp.Run(runCtx, setup...); err != nil {
+	// Session setup and the manual-login pause run without the capture timeout:
+	// waiting for a person to log in must not eat into the crawl budget.
+	if err := chromedp.Run(browserCtx, setup...); err != nil {
 		return fmt.Errorf("browser session setup: %w", err)
 	}
+	if s.Headful {
+		if err := s.manualLogin(browserCtx); err != nil {
+			return err
+		}
+	}
+
+	runCtx, cancelRun := context.WithTimeout(browserCtx, s.Timeout)
+	defer cancelRun()
 
 	crawlErr := s.crawl(runCtx)
 	// Our own timeout firing means "capture window closed", not failure — keep
@@ -128,6 +146,39 @@ func (s *BrowserSource) Fetch(ctx context.Context, out chan<- model.URLRecord) e
 		}
 	}
 	return nil
+}
+
+// manualLogin opens the first entry URL in the visible window and blocks until
+// the operator presses Enter (or EOF/cancellation), so they can log in by hand.
+// Requests made during login are captured too, which is fine — login endpoints
+// are legitimate whitelist entries.
+func (s *BrowserSource) manualLogin(ctx context.Context) error {
+	if err := chromedp.Run(ctx, chromedp.Navigate(s.URLs[0])); err != nil {
+		return fmt.Errorf("open login page: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "\n[headful] Log in and get the app ready in the opened window,\n"+
+		"          then press Enter here to start capturing... ")
+	if err := waitForSignal(ctx, os.Stdin); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, "capturing.")
+	return nil
+}
+
+// waitForSignal returns when a line is read from r (Enter), r reaches EOF (so a
+// piped/empty stdin proceeds immediately), or ctx is cancelled.
+func waitForSignal(ctx context.Context, r io.Reader) error {
+	done := make(chan struct{})
+	go func() {
+		_, _ = bufio.NewReader(r).ReadString('\n')
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // setupActions enables the network domain and injects the authenticated session

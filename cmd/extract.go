@@ -28,6 +28,7 @@ type extractOptions struct {
 	wait           time.Duration
 	timeout        time.Duration
 	insecure       bool
+	headful        bool
 	depth          int
 	maxPages       int
 	cookies        []string
@@ -54,6 +55,8 @@ func newExtractCmd() *cobra.Command {
 	flags.DurationVar(&opts.timeout, "timeout", 30*time.Second, "hard cap on the browser capture, across all pages (--url)")
 	flags.BoolVarP(&opts.insecure, "insecure", "k", false,
 		"accept invalid TLS certificates in the browser capture (self-signed/internal CA)")
+	flags.BoolVar(&opts.headful, "headful", false,
+		"open a visible window and pause for manual login before capturing (avoids duplicate-login session expiry)")
 	flags.IntVar(&opts.depth, "depth", 0, "link hops to follow from each entry URL (0 = entry pages only)")
 	flags.IntVar(&opts.maxPages, "max-pages", 50, "max pages to visit while crawling (--url with --depth)")
 	flags.StringArrayVar(&opts.cookies, "cookie", nil, `session cookie "name=value" for --url, repeatable`)
@@ -163,6 +166,7 @@ func buildSources(opts *extractOptions) ([]source.Source, error) {
 	if len(opts.urls) > 0 {
 		browser := source.NewBrowserSource(opts.urls, opts.wait, opts.timeout)
 		browser.InsecureTLS = opts.insecure
+		browser.Headful = opts.headful
 		browser.Depth = opts.depth
 		browser.MaxPages = opts.maxPages
 		browser.Cookies = opts.cookies

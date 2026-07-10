@@ -11,7 +11,7 @@
 ## 현재 상태 (Phase 4)
 
 - **HAR** 캡처 파일에서 요청 URL 추출
-- **헤드리스 브라우저 캡처(chromedp)** — 대상 URL을 실제 구동하며 페이지 로드·XHR/fetch·서드파티(CDN/폰트/애널리틱스) 요청 전량 기록. 같은 호스트 링크 자동 크롤(`--depth`, SPA 해시 라우트 `#/...` 포함), 로그인 세션 주입(`--cookie`/`--header`)으로 인증 페이지도 무인 수집. SPA는 여러 진입 URL(`--url` 반복 / `--url-file`)로 라우트를 열거해 각 화면의 API 호출 캡처
+- **헤드리스 브라우저 캡처(chromedp)** — 대상 URL을 실제 구동하며 페이지 로드·XHR/fetch·서드파티(CDN/폰트/애널리틱스) 요청 전량 기록. 같은 호스트 링크 자동 크롤(`--depth`, SPA 해시 라우트 `#/...` 포함), 로그인 세션 주입(`--cookie`/`--header`)으로 인증 페이지도 무인 수집. SPA는 여러 진입 URL(`--url` 반복 / `--url-file`)로 라우트를 열거해 각 화면의 API 호출 캡처. 쿠키 주입 시 중복 로그인으로 세션이 만료되는 앱은 `--headful`로 창에서 직접 로그인 후 캡처
 - 두 소스 동시 수집 및 병합 (소스별 관측 이력 보존)
 - 정규화(scheme/host 소문자화, 기본 포트·fragment 제거, 휘발성 쿼리 파라미터 제거)
 - 중복 제거 및 관측 빈도/시간 범위 집계
@@ -55,6 +55,10 @@ url-trace extract --url https://app.example.com --wait 5s
 # 로그인이 필요한 앱: 세션 주입 + 링크 자동 크롤 (사람이 안 눌러도 페이지 발견)
 url-trace extract --url https://app.example.com --depth 2 \
   --cookie 'SESSION=abcd1234' --header 'Authorization: Bearer <token>'
+
+# 중복 로그인으로 세션이 만료되는 앱: 창을 띄워 직접 로그인 후 캡처
+# (열린 창에서 로그인·화면 준비 후 터미널에서 Enter → 인증된 세션으로 자동 크롤)
+url-trace extract --headful --url https://app.example.com --depth 2
 
 # SPA: 라우트를 진입 URL로 열거 (각 화면의 API 호출을 캡처)
 url-trace extract \
@@ -105,6 +109,7 @@ url-trace diff --policy policy.json -i rerun.json --fail-on-new
 | `--wait` | | 페이지 로드 후 늦은 요청까지 캡처할 대기 시간 (`--url`) | `3s` |
 | `--timeout` | | 브라우저 캡처 전체 상한 (`--url`) | `30s` |
 | `--insecure` | `-k` | 잘못된 TLS 인증서 허용 — 자체 서명·내부 CA 환경 (`--url`) | `false` |
+| `--headful` | | 창을 띄워 수동 로그인 후 캡처 (중복 로그인 세션 만료 회피, 디스플레이 필요) | `false` |
 | `--depth` | | `--url`에서 따라갈 링크 hop 수 (0 = 진입 페이지만, 같은 호스트만 크롤) | `0` |
 | `--max-pages` | | 크롤 시 방문할 최대 페이지 수 (초과 시 경고) | `50` |
 | `--cookie` | | 세션 쿠키 `"name=value"` (반복 지정 가능) | |

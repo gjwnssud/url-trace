@@ -1,6 +1,37 @@
 package source
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestWaitForSignal(t *testing.T) {
+	t.Run("returns on newline", func(t *testing.T) {
+		if err := waitForSignal(context.Background(), strings.NewReader("\n")); err != nil {
+			t.Errorf("got %v, want nil", err)
+		}
+	})
+	t.Run("returns on EOF (piped/empty stdin)", func(t *testing.T) {
+		if err := waitForSignal(context.Background(), strings.NewReader("")); err != nil {
+			t.Errorf("got %v, want nil", err)
+		}
+	})
+	t.Run("returns on context cancel", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		// blockingReader never yields, so only ctx cancellation can unblock.
+		if err := waitForSignal(ctx, blockingReader{}); err == nil {
+			t.Error("want context error, got nil")
+		}
+	})
+}
+
+// blockingReader blocks forever, simulating a stdin with no input.
+type blockingReader struct{}
+
+func (blockingReader) Read([]byte) (int, error) { select {} }
 
 func TestParseCookies(t *testing.T) {
 	tests := []struct {
