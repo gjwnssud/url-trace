@@ -141,15 +141,40 @@ func (s *BrowserSource) setupActions() ([]chromedp.Action, error) {
 		actions = append(actions, network.SetExtraHTTPHeaders(headers))
 	}
 
-	for _, c := range s.Cookies {
-		name, value, ok := strings.Cut(c, "=")
-		if !ok {
-			return nil, fmt.Errorf("invalid --cookie %q (want \"name=value\")", c)
-		}
-		name, value = strings.TrimSpace(name), strings.TrimSpace(value)
-		actions = append(actions, network.SetCookie(name, value).WithURL(s.URL))
+	cookies, err := parseCookies(s.Cookies)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range cookies {
+		actions = append(actions, network.SetCookie(c.name, c.value).WithURL(s.URL))
 	}
 	return actions, nil
+}
+
+type cookie struct{ name, value string }
+
+// parseCookies expands the --cookie inputs into individual cookies. Each input
+// may hold several cookies separated by ';' or ',', so a whole Cookie header
+// copied from the browser (or a comma-joined list) works as one flag — those
+// separators never appear unencoded in a cookie name or value.
+func parseCookies(raw []string) ([]cookie, error) {
+	splitSep := func(r rune) bool { return r == ';' || r == ',' }
+
+	var out []cookie
+	for _, entry := range raw {
+		for _, part := range strings.FieldsFunc(entry, splitSep) {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			name, value, ok := strings.Cut(part, "=")
+			if !ok {
+				return nil, fmt.Errorf("invalid --cookie %q (want \"name=value\")", part)
+			}
+			out = append(out, cookie{strings.TrimSpace(name), strings.TrimSpace(value)})
+		}
+	}
+	return out, nil
 }
 
 // crawl visits the entry URL and, up to Depth hops and MaxPages pages, follows
