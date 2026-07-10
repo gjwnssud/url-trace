@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	neturl "net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gjwnssud/url-trace/internal/classify"
@@ -21,7 +23,8 @@ import (
 
 type extractOptions struct {
 	harPath        string
-	url            string
+	urls           []string
+	urlFile        string
 	wait           time.Duration
 	timeout        time.Duration
 	insecure       bool
@@ -45,12 +48,13 @@ func newExtractCmd() *cobra.Command {
 	}
 	flags := cmd.Flags()
 	flags.StringVar(&opts.harPath, "har", "", "path to a HAR capture file")
-	flags.StringVar(&opts.url, "url", "", "target URL to load in a headless browser and capture")
+	flags.StringArrayVar(&opts.urls, "url", nil, "entry URL to load in a headless browser and capture; repeatable (list SPA routes here)")
+	flags.StringVar(&opts.urlFile, "url-file", "", "file of entry URLs, one per line ('#' comments allowed)")
 	flags.DurationVar(&opts.wait, "wait", 3*time.Second, "idle time after page load to capture late requests (--url)")
-	flags.DurationVar(&opts.timeout, "timeout", 30*time.Second, "hard cap on the browser capture (--url)")
+	flags.DurationVar(&opts.timeout, "timeout", 30*time.Second, "hard cap on the browser capture, across all pages (--url)")
 	flags.BoolVarP(&opts.insecure, "insecure", "k", false,
 		"accept invalid TLS certificates in the browser capture (self-signed/internal CA)")
-	flags.IntVar(&opts.depth, "depth", 0, "link hops to follow from --url (0 = entry page only)")
+	flags.IntVar(&opts.depth, "depth", 0, "link hops to follow from each entry URL (0 = entry pages only)")
 	flags.IntVar(&opts.maxPages, "max-pages", 50, "max pages to visit while crawling (--url with --depth)")
 	flags.StringArrayVar(&opts.cookies, "cookie", nil, `session cookie "name=value" for --url, repeatable`)
 	flags.StringArrayVar(&opts.headers, "header", nil, `HTTP header "Key: Value" for --url, repeatable`)
@@ -62,6 +66,14 @@ func newExtractCmd() *cobra.Command {
 }
 
 func runExtract(ctx context.Context, opts *extractOptions) error {
+	if opts.urlFile != "" {
+		fileURLs, err := readURLFile(opts.urlFile)
+		if err != nil {
+			return err
+		}
+		opts.urls = append(opts.urls, fileURLs...)
+	}
+
 	sources, err := buildSources(opts)
 	if err != nil {
 		return err
@@ -91,26 +103,54 @@ func runExtract(ctx context.Context, opts *extractOptions) error {
 }
 
 // primaryDomains returns the explicitly configured first-party domains, or —
-// when none are given — derives the registrable domain (eTLD+1) from --url so
-// that sibling subdomains like cdn.example.com still classify as first-party.
-// An explicit --primary-domain list is respected as-is: the user may be
-// deliberately excluding the target's siblings.
+// when none are given — derives the registrable domain (eTLD+1) of every entry
+// URL so that sibling subdomains like cdn.example.com still classify as
+// first-party. An explicit --primary-domain list is respected as-is: the user
+// may be deliberately excluding the targets' siblings.
 func primaryDomains(opts *extractOptions) []string {
-	if len(opts.primaryDomains) > 0 || opts.url == "" {
+	if len(opts.primaryDomains) > 0 {
 		return opts.primaryDomains
 	}
-	u, err := neturl.Parse(opts.url)
-	if err != nil || u.Hostname() == "" {
-		return nil
+	seen := map[string]bool{}
+	var domains []string
+	for _, raw := range opts.urls {
+		u, err := neturl.Parse(raw)
+		if err != nil || u.Hostname() == "" {
+			continue
+		}
+		host := u.Hostname()
+		// localhost, bare IPs, and other non-registrable hosts have no eTLD+1;
+		// fall back to the host itself.
+		domain, err := publicsuffix.EffectiveTLDPlusOne(host)
+		if err != nil {
+			domain = host
+		}
+		if !seen[domain] {
+			seen[domain] = true
+			domains = append(domains, domain)
+		}
 	}
-	host := u.Hostname()
-	// localhost, bare IPs, and other non-registrable hosts have no eTLD+1;
-	// fall back to the host itself.
-	registrable, err := publicsuffix.EffectiveTLDPlusOne(host)
+	return domains
+}
+
+// readURLFile reads entry URLs one per line, ignoring blank lines and comments.
+func readURLFile(path string) ([]string, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return []string{host}
+		return nil, fmt.Errorf("open url file: %w", err)
 	}
-	return []string{registrable}
+	defer f.Close()
+
+	var urls []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		urls = append(urls, line)
+	}
+	return urls, scanner.Err()
 }
 
 // buildSources assembles the collection sources selected by the flags. At least
@@ -120,8 +160,8 @@ func buildSources(opts *extractOptions) ([]source.Source, error) {
 	if opts.harPath != "" {
 		sources = append(sources, source.NewHARSource(opts.harPath))
 	}
-	if opts.url != "" {
-		browser := source.NewBrowserSource(opts.url, opts.wait, opts.timeout)
+	if len(opts.urls) > 0 {
+		browser := source.NewBrowserSource(opts.urls, opts.wait, opts.timeout)
 		browser.InsecureTLS = opts.insecure
 		browser.Depth = opts.depth
 		browser.MaxPages = opts.maxPages

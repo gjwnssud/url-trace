@@ -11,7 +11,7 @@
 ## 현재 상태 (Phase 4)
 
 - **HAR** 캡처 파일에서 요청 URL 추출
-- **헤드리스 브라우저 캡처(chromedp)** — 대상 URL을 실제 구동하며 페이지 로드·XHR/fetch·서드파티(CDN/폰트/애널리틱스) 요청 전량 기록. 같은 호스트 링크 자동 크롤(`--depth`), 로그인 세션 주입(`--cookie`/`--header`)으로 인증 페이지도 무인 수집
+- **헤드리스 브라우저 캡처(chromedp)** — 대상 URL을 실제 구동하며 페이지 로드·XHR/fetch·서드파티(CDN/폰트/애널리틱스) 요청 전량 기록. 같은 호스트 링크 자동 크롤(`--depth`, SPA 해시 라우트 `#/...` 포함), 로그인 세션 주입(`--cookie`/`--header`)으로 인증 페이지도 무인 수집. SPA는 여러 진입 URL(`--url` 반복 / `--url-file`)로 라우트를 열거해 각 화면의 API 호출 캡처
 - 두 소스 동시 수집 및 병합 (소스별 관측 이력 보존)
 - 정규화(scheme/host 소문자화, 기본 포트·fragment 제거, 휘발성 쿼리 파라미터 제거)
 - 중복 제거 및 관측 빈도/시간 범위 집계
@@ -56,6 +56,14 @@ url-trace extract --url https://app.example.com --wait 5s
 url-trace extract --url https://app.example.com --depth 2 \
   --cookie 'SESSION=abcd1234' --header 'Authorization: Bearer <token>'
 
+# SPA: 라우트를 진입 URL로 열거 (각 화면의 API 호출을 캡처)
+url-trace extract \
+  --url https://app.example.com/users \
+  --url https://app.example.com/orders \
+  --cookie 'SESSION=abcd1234'
+# 또는 파일로
+url-trace extract --url-file routes.txt --cookie 'SESSION=abcd1234'
+
 # 두 소스 병합 → CSV 파일로 저장
 url-trace extract --har examples/sample.har --url https://app.example.com --format csv -o urls.csv
 ```
@@ -92,7 +100,8 @@ url-trace diff --policy policy.json -i rerun.json --fail-on-new
 | 플래그 | 단축 | 설명 | 기본값 |
 |--------|------|------|--------|
 | `--har` | | HAR 캡처 파일 경로 | |
-| `--url` | | 헤드리스 브라우저로 구동·캡처할 대상 URL | |
+| `--url` | | 헤드리스 브라우저로 구동·캡처할 진입 URL (반복 지정, SPA 라우트 열거용) | |
+| `--url-file` | | 진입 URL 목록 파일 (한 줄에 하나, `#` 주석 허용) | |
 | `--wait` | | 페이지 로드 후 늦은 요청까지 캡처할 대기 시간 (`--url`) | `3s` |
 | `--timeout` | | 브라우저 캡처 전체 상한 (`--url`) | `30s` |
 | `--insecure` | `-k` | 잘못된 TLS 인증서 허용 — 자체 서명·내부 CA 환경 (`--url`) | `false` |

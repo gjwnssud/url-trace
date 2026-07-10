@@ -60,3 +60,22 @@ func TestParseCookiesInvalid(t *testing.T) {
 		t.Fatal("a cookie without '=' must error")
 	}
 }
+
+func TestNormalizeLink(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"https://a.com/x", "https://a.com/x"},
+		{"https://a.com/x#/users", "https://a.com/x#/users"},   // hash route kept
+		{"https://a.com/#!/orders", "https://a.com/#!/orders"}, // hashbang route kept
+		{"https://a.com/x#section", "https://a.com/x"},         // plain anchor dropped
+		{"mailto:me@a.com", ""},                                // non-http dropped
+		{"javascript:void(0)", ""},
+	}
+	for _, tt := range tests {
+		if got := normalizeLink(tt.in); got != tt.want {
+			t.Errorf("normalizeLink(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}

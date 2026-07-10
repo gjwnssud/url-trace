@@ -32,7 +32,7 @@ func TestBrowserSourceFetch(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	src := NewBrowserSource(srv.URL, 1*time.Second, 60*time.Second)
+	src := NewBrowserSource([]string{srv.URL}, 1*time.Second, 60*time.Second)
 	records := drain(t, src)
 
 	got := make(map[string]bool)
@@ -64,7 +64,7 @@ func TestBrowserSourceInsecureTLS(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewBrowserSource(srv.URL, 1*time.Second, 60*time.Second)
+	src := NewBrowserSource([]string{srv.URL}, 1*time.Second, 60*time.Second)
 	src.InsecureTLS = true
 	records := drain(t, src)
 
@@ -97,7 +97,7 @@ func TestBrowserSourceCrawl(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	src := NewBrowserSource(srv.URL, 500*time.Millisecond, 60*time.Second)
+	src := NewBrowserSource([]string{srv.URL}, 500*time.Millisecond, 60*time.Second)
 	src.Depth = 1 // entry + its direct links, but not /c (two hops away)
 	records := drain(t, src)
 
@@ -136,13 +136,45 @@ func TestBrowserSourceSessionInjection(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	src := NewBrowserSource(srv.URL, 500*time.Millisecond, 60*time.Second)
+	src := NewBrowserSource([]string{srv.URL}, 500*time.Millisecond, 60*time.Second)
 	src.Cookies = []string{cookieName + "=" + cookieVal}
 	src.Headers = []string{headerName + ": " + headerVal}
 	records := drain(t, src)
 
 	if !capturedURLs(records)[srv.URL+"/protected"] {
 		t.Errorf("session not injected: /protected not captured; got %v", keys(capturedURLs(records)))
+	}
+}
+
+func TestBrowserSourceMultipleEntryURLs(t *testing.T) {
+	requireChrome(t)
+
+	// Simulate an SPA whose routes are not reachable by following <a href> —
+	// each route only fires its own API call. Enumerating the routes as entry
+	// URLs must capture every one of those calls.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `<!doctype html><html><body><div id="app"></div></body></html>`)
+	})
+	mux.HandleFunc("/users", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `<html><body><script>fetch('/api/users')</script></body></html>`)
+	})
+	mux.HandleFunc("/orders", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `<html><body><script>fetch('/api/orders')</script></body></html>`)
+	})
+	mux.HandleFunc("/api/users", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "[]") })
+	mux.HandleFunc("/api/orders", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "[]") })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	src := NewBrowserSource([]string{srv.URL + "/users", srv.URL + "/orders"}, 500*time.Millisecond, 60*time.Second)
+	records := drain(t, src)
+
+	got := capturedURLs(records)
+	for _, want := range []string{srv.URL + "/api/users", srv.URL + "/api/orders"} {
+		if !got[want] {
+			t.Errorf("entry-URL enumeration missing %q; got %v", want, keys(got))
+		}
 	}
 }
 

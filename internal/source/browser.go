@@ -15,18 +15,20 @@ import (
 	"github.com/gjwnssud/url-trace/internal/model"
 )
 
-// BrowserSource drives a target URL in a headless browser and records every
-// network request it makes — the page load, XHR/fetch calls, and third-party
-// resources (CDNs, fonts, analytics). A static crawl misses these dynamic and
-// cross-origin requests, yet they are exactly what a whitelist must allow, so
-// this is the primary active-collection source.
+// BrowserSource drives one or more entry URLs in a headless browser and records
+// every network request they make — the page load, XHR/fetch calls, and
+// third-party resources (CDNs, fonts, analytics). A static crawl misses these
+// dynamic and cross-origin requests, yet they are exactly what a whitelist must
+// allow, so this is the primary active-collection source.
 //
-// With Depth > 0 it follows same-host links breadth-first, so pages behind the
-// entry point are discovered automatically instead of only the ones a human
-// clicks. Cookies and Headers inject an authenticated session, so pages that
-// require login are reachable without a person driving the browser.
+// For single-page apps, pass several entry URLs (the app's routes/deep links):
+// each is loaded fresh so its client-side route bootstraps and fires that
+// screen's API calls. With Depth > 0 it also follows same-host links —
+// including SPA hash routes (#/path) — breadth-first. Cookies and Headers
+// inject an authenticated session so login-gated pages are reachable without a
+// person driving the browser.
 type BrowserSource struct {
-	URL     string
+	URLs    []string
 	Wait    time.Duration // idle time after load to let late XHR/fetch fire
 	Timeout time.Duration // hard cap on the whole capture (across all pages)
 	// InsecureTLS makes the browser accept invalid certificates (self-signed,
@@ -34,8 +36,8 @@ type BrowserSource struct {
 	// only reads URLs, so the usual MITM downgrade concern is limited to the
 	// capture session itself.
 	InsecureTLS bool
-	// Depth is how many link hops to follow from the entry URL. 0 visits only
-	// the entry URL (single-page capture).
+	// Depth is how many link hops to follow from each entry URL. 0 visits only
+	// the entry URLs themselves.
 	Depth int
 	// MaxPages caps how many pages are visited regardless of Depth, so a large
 	// site cannot run unbounded. Reaching it is reported, never silent.
@@ -47,20 +49,24 @@ type BrowserSource struct {
 }
 
 // NewBrowserSource creates a source that captures the requests made while
-// loading url.
-func NewBrowserSource(url string, wait, timeout time.Duration) *BrowserSource {
-	return &BrowserSource{URL: url, Wait: wait, Timeout: timeout}
+// loading the given entry URLs.
+func NewBrowserSource(urls []string, wait, timeout time.Duration) *BrowserSource {
+	return &BrowserSource{URLs: urls, Wait: wait, Timeout: timeout}
 }
 
 // Name identifies this source in audit metadata.
 func (s *BrowserSource) Name() string { return "browser" }
 
-// Fetch launches headless Chrome and crawls from the entry URL, emitting a
+// Fetch launches headless Chrome and crawls from the entry URLs, emitting a
 // record for every request observed. Requests are buffered during the run and
 // streamed out only afterward, so the browser's event loop is never blocked on
 // a slow consumer. Hitting the configured timeout is a normal stop condition:
 // whatever was captured so far is still emitted rather than discarded.
 func (s *BrowserSource) Fetch(ctx context.Context, out chan<- model.URLRecord) error {
+	if len(s.URLs) == 0 {
+		return errors.New("browser source: no entry URLs")
+	}
+
 	allocOpts := chromedp.DefaultExecAllocatorOptions[:]
 	if s.InsecureTLS {
 		allocOpts = append(allocOpts, chromedp.Flag("ignore-certificate-errors", true))
@@ -125,7 +131,8 @@ func (s *BrowserSource) Fetch(ctx context.Context, out chan<- model.URLRecord) e
 }
 
 // setupActions enables the network domain and injects the authenticated session
-// (extra headers, cookies) before any navigation.
+// (extra headers, cookies) before any navigation. Cookies are set for every
+// distinct entry host so all seeds are authenticated.
 func (s *BrowserSource) setupActions() ([]chromedp.Action, error) {
 	actions := []chromedp.Action{network.Enable()}
 
@@ -145,8 +152,10 @@ func (s *BrowserSource) setupActions() ([]chromedp.Action, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, c := range cookies {
-		actions = append(actions, network.SetCookie(c.name, c.value).WithURL(s.URL))
+	for _, seed := range distinctHosts(s.URLs) {
+		for _, c := range cookies {
+			actions = append(actions, network.SetCookie(c.name, c.value).WithURL(seed))
+		}
 	}
 	return actions, nil
 }
@@ -177,22 +186,26 @@ func parseCookies(raw []string) ([]cookie, error) {
 	return out, nil
 }
 
-// crawl visits the entry URL and, up to Depth hops and MaxPages pages, follows
+// crawl visits every entry URL and, up to Depth hops and MaxPages pages, follows
 // same-host links breadth-first.
 func (s *BrowserSource) crawl(ctx context.Context) error {
-	start, err := url.Parse(s.URL)
-	if err != nil {
-		return fmt.Errorf("invalid --url %q: %w", s.URL, err)
+	hosts := map[string]bool{}
+	visited := map[string]bool{}
+	var queue []crawlItem
+
+	for _, seed := range s.URLs {
+		u, err := url.Parse(seed)
+		if err != nil {
+			return fmt.Errorf("invalid --url %q: %w", seed, err)
+		}
+		hosts[strings.ToLower(u.Host)] = true
+		if !visited[seed] {
+			visited[seed] = true
+			queue = append(queue, crawlItem{url: seed, depth: 0})
+		}
 	}
 
-	type item struct {
-		url   string
-		depth int
-	}
-	queue := []item{{url: s.URL, depth: 0}}
-	visited := map[string]bool{s.URL: true}
 	pages := 0
-
 	for len(queue) > 0 {
 		cur := queue[0]
 		queue = queue[1:]
@@ -206,6 +219,10 @@ func (s *BrowserSource) crawl(ctx context.Context) error {
 
 		var hrefs []string
 		actions := []chromedp.Action{
+			// Bounce through about:blank so navigating to a URL that differs
+			// only by a hash route still triggers a full load — otherwise a
+			// same-document hash change fires no load event and Navigate hangs.
+			chromedp.Navigate("about:blank"),
 			chromedp.Navigate(cur.url),
 			chromedp.Sleep(s.Wait),
 		}
@@ -224,33 +241,58 @@ func (s *BrowserSource) crawl(ctx context.Context) error {
 
 		for _, href := range hrefs {
 			next := normalizeLink(href)
-			if next == "" || visited[next] || !sameHost(start, next) {
+			if next == "" || visited[next] || !hosts[hostOf(next)] {
 				continue
 			}
 			visited[next] = true
-			queue = append(queue, item{url: next, depth: cur.depth + 1})
+			queue = append(queue, crawlItem{url: next, depth: cur.depth + 1})
 		}
 	}
 	return nil
 }
 
+type crawlItem struct {
+	url   string
+	depth int
+}
+
 // linkExtractJS returns every anchor's resolved absolute href.
 const linkExtractJS = `Array.from(document.querySelectorAll('a[href]')).map(a => a.href)`
 
-// normalizeLink drops the fragment and keeps only http(s) links.
+// normalizeLink keeps only http(s) links. SPA hash routes (#/path, #!/path) are
+// preserved as distinct pages; plain in-page anchors (#section), which do not
+// change the view, have their fragment dropped so they dedupe to one page.
 func normalizeLink(href string) string {
 	u, err := url.Parse(href)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		return ""
 	}
-	u.Fragment = ""
+	if u.Fragment != "" && !strings.HasPrefix(u.Fragment, "/") && !strings.HasPrefix(u.Fragment, "!") {
+		u.Fragment = ""
+	}
 	return u.String()
 }
 
-func sameHost(start *url.URL, rawURL string) bool {
+func hostOf(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return false
+		return ""
 	}
-	return strings.EqualFold(u.Host, start.Host)
+	return strings.ToLower(u.Host)
+}
+
+// distinctHosts returns one representative URL per distinct host, preserving
+// order, so per-host setup work runs once each.
+func distinctHosts(urls []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, u := range urls {
+		h := hostOf(u)
+		if seen[h] {
+			continue
+		}
+		seen[h] = true
+		out = append(out, u)
+	}
+	return out
 }
