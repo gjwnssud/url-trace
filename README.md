@@ -11,7 +11,7 @@
 ## 현재 상태 (Phase 4)
 
 - **HAR** 캡처 파일에서 요청 URL 추출
-- **헤드리스 브라우저 캡처(chromedp)** — 대상 URL을 실제 구동하며 페이지 로드·XHR/fetch·서드파티(CDN/폰트/애널리틱스) 요청 전량 기록
+- **헤드리스 브라우저 캡처(chromedp)** — 대상 URL을 실제 구동하며 페이지 로드·XHR/fetch·서드파티(CDN/폰트/애널리틱스) 요청 전량 기록. 같은 호스트 링크 자동 크롤(`--depth`), 로그인 세션 주입(`--cookie`/`--header`)으로 인증 페이지도 무인 수집
 - 두 소스 동시 수집 및 병합 (소스별 관측 이력 보존)
 - 정규화(scheme/host 소문자화, 기본 포트·fragment 제거, 휘발성 쿼리 파라미터 제거)
 - 중복 제거 및 관측 빈도/시간 범위 집계
@@ -51,6 +51,10 @@ url-trace extract --har examples/sample.har
 
 # 대상 URL을 헤드리스 브라우저로 구동하며 네트워크 요청 캡처
 url-trace extract --url https://app.example.com --wait 5s
+
+# 로그인이 필요한 앱: 세션 주입 + 링크 자동 크롤 (사람이 안 눌러도 페이지 발견)
+url-trace extract --url https://app.example.com --depth 2 \
+  --cookie 'SESSION=abcd1234' --header 'Authorization: Bearer <token>'
 
 # 두 소스 병합 → CSV 파일로 저장
 url-trace extract --har examples/sample.har --url https://app.example.com --format csv -o urls.csv
@@ -92,6 +96,10 @@ url-trace diff --policy policy.json -i rerun.json --fail-on-new
 | `--wait` | | 페이지 로드 후 늦은 요청까지 캡처할 대기 시간 (`--url`) | `3s` |
 | `--timeout` | | 브라우저 캡처 전체 상한 (`--url`) | `30s` |
 | `--insecure` | `-k` | 잘못된 TLS 인증서 허용 — 자체 서명·내부 CA 환경 (`--url`) | `false` |
+| `--depth` | | `--url`에서 따라갈 링크 hop 수 (0 = 진입 페이지만, 같은 호스트만 크롤) | `0` |
+| `--max-pages` | | 크롤 시 방문할 최대 페이지 수 (초과 시 경고) | `50` |
+| `--cookie` | | 세션 쿠키 `"name=value"` (반복 지정 가능) | |
+| `--header` | | HTTP 헤더 `"Key: Value"` (반복 지정 가능) | |
 | `--primary-domain` | | 1st-party 도메인 (반복 지정 가능, 서브도메인 포함 매칭) | `--url`의 eTLD+1 |
 | `--output` | `-o` | 출력 파일 (미지정 시 stdout) | stdout |
 | `--format` | `-f` | 출력 포맷: `json` 또는 `csv` | `json` |

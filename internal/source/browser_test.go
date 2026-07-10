@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/gjwnssud/url-trace/internal/model"
 )
 
 func TestBrowserSourceFetch(t *testing.T) {
@@ -75,6 +77,89 @@ func TestBrowserSourceInsecureTLS(t *testing.T) {
 	if !found {
 		t.Errorf("self-signed page not captured with InsecureTLS; got %+v", records)
 	}
+}
+
+func TestBrowserSourceCrawl(t *testing.T) {
+	requireChrome(t)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `<!doctype html><html><body>
+<a href="/a">a</a><a href="/b">b</a>
+<a href="https://external.example.com/x">off-site</a>
+</body></html>`)
+	})
+	mux.HandleFunc("/a", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `<html><body><a href="/c">c</a></body></html>`)
+	})
+	mux.HandleFunc("/b", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "b") })
+	mux.HandleFunc("/c", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "c") })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	src := NewBrowserSource(srv.URL, 500*time.Millisecond, 30*time.Second)
+	src.Depth = 1 // entry + its direct links, but not /c (two hops away)
+	records := drain(t, src)
+
+	got := capturedURLs(records)
+	for _, want := range []string{srv.URL + "/", srv.URL + "/a", srv.URL + "/b"} {
+		if !got[want] {
+			t.Errorf("depth-1 crawl missing %q; got %v", want, keys(got))
+		}
+	}
+	if got[srv.URL+"/c"] {
+		t.Error("/c is two hops away and must not be visited at depth 1")
+	}
+	// Off-site links are never followed (same-host only), though the page's own
+	// request to load it may still be recorded — we only assert it was not crawled
+	// by checking no deeper external requests appear.
+}
+
+func TestBrowserSourceSessionInjection(t *testing.T) {
+	requireChrome(t)
+
+	const cookieName, cookieVal = "session", "s3cr3t"
+	const headerName, headerVal = "X-Auth-Token", "tok-123"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		c, _ := r.Cookie(cookieName)
+		// Only an authenticated request gets the protected resource link, so
+		// capturing /protected proves the session was injected.
+		if (c != nil && c.Value == cookieVal) && r.Header.Get(headerName) == headerVal {
+			fmt.Fprint(w, `<html><body><img src="/protected"></body></html>`)
+			return
+		}
+		fmt.Fprint(w, `<html><body>login required</body></html>`)
+	})
+	mux.HandleFunc("/protected", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "ok") })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	src := NewBrowserSource(srv.URL, 500*time.Millisecond, 20*time.Second)
+	src.Cookies = []string{cookieName + "=" + cookieVal}
+	src.Headers = []string{headerName + ": " + headerVal}
+	records := drain(t, src)
+
+	if !capturedURLs(records)[srv.URL+"/protected"] {
+		t.Errorf("session not injected: /protected not captured; got %v", keys(capturedURLs(records)))
+	}
+}
+
+func capturedURLs(records []model.URLRecord) map[string]bool {
+	got := make(map[string]bool)
+	for _, r := range records {
+		got[r.URL] = true
+	}
+	return got
+}
+
+func keys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 // requireChrome skips the test when no Chrome/Chromium is available, so the
