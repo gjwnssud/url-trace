@@ -21,6 +21,11 @@ type BrowserSource struct {
 	URL     string
 	Wait    time.Duration // idle time after load to let late XHR/fetch fire
 	Timeout time.Duration // hard cap on the whole capture
+	// InsecureTLS makes the browser accept invalid certificates (self-signed,
+	// internal CA). Needed for internal validation environments; the capture
+	// only reads URLs, so the usual MITM downgrade concern is limited to the
+	// capture session itself.
+	InsecureTLS bool
 }
 
 // NewBrowserSource creates a source that captures the requests made while
@@ -38,7 +43,11 @@ func (s *BrowserSource) Name() string { return "browser" }
 // consumer. Hitting the configured timeout is a normal stop condition: whatever
 // was captured so far is still emitted rather than discarded.
 func (s *BrowserSource) Fetch(ctx context.Context, out chan<- model.URLRecord) error {
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(ctx, chromedp.DefaultExecAllocatorOptions[:]...)
+	allocOpts := chromedp.DefaultExecAllocatorOptions[:]
+	if s.InsecureTLS {
+		allocOpts = append(allocOpts, chromedp.Flag("ignore-certificate-errors", true))
+	}
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(ctx, allocOpts...)
 	defer cancelAlloc()
 
 	browserCtx, cancelBrowser := chromedp.NewContext(allocCtx)

@@ -51,6 +51,32 @@ func TestBrowserSourceFetch(t *testing.T) {
 	}
 }
 
+func TestBrowserSourceInsecureTLS(t *testing.T) {
+	requireChrome(t)
+
+	// httptest's TLS server uses a self-signed certificate, exactly the
+	// internal-environment case --insecure exists for.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!doctype html><html><body>ok</body></html>`)
+	}))
+	defer srv.Close()
+
+	src := NewBrowserSource(srv.URL, 1*time.Second, 20*time.Second)
+	src.InsecureTLS = true
+	records := drain(t, src)
+
+	found := false
+	for _, r := range records {
+		if r.URL == srv.URL+"/" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("self-signed page not captured with InsecureTLS; got %+v", records)
+	}
+}
+
 // requireChrome skips the test when no Chrome/Chromium is available, so the
 // suite stays green in environments without a browser.
 func requireChrome(t *testing.T) {

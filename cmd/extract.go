@@ -24,6 +24,7 @@ type extractOptions struct {
 	url            string
 	wait           time.Duration
 	timeout        time.Duration
+	insecure       bool
 	primaryDomains []string
 	outputPath     string
 	format         string
@@ -43,6 +44,8 @@ func newExtractCmd() *cobra.Command {
 	flags.StringVar(&opts.url, "url", "", "target URL to load in a headless browser and capture")
 	flags.DurationVar(&opts.wait, "wait", 3*time.Second, "idle time after page load to capture late requests (--url)")
 	flags.DurationVar(&opts.timeout, "timeout", 30*time.Second, "hard cap on the browser capture (--url)")
+	flags.BoolVarP(&opts.insecure, "insecure", "k", false,
+		"accept invalid TLS certificates in the browser capture (self-signed/internal CA)")
 	flags.StringSliceVar(&opts.primaryDomains, "primary-domain", nil,
 		"first-party domain, repeatable; subdomains match (default: derived from --url)")
 	flags.StringVarP(&opts.outputPath, "output", "o", "", "output file (default: stdout)")
@@ -110,7 +113,9 @@ func buildSources(opts *extractOptions) ([]source.Source, error) {
 		sources = append(sources, source.NewHARSource(opts.harPath))
 	}
 	if opts.url != "" {
-		sources = append(sources, source.NewBrowserSource(opts.url, opts.wait, opts.timeout))
+		browser := source.NewBrowserSource(opts.url, opts.wait, opts.timeout)
+		browser.InsecureTLS = opts.insecure
+		sources = append(sources, browser)
 	}
 	if len(sources) == 0 {
 		return nil, errors.New("provide at least one source: --har and/or --url")

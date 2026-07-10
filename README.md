@@ -91,6 +91,7 @@ url-trace diff --policy policy.json -i rerun.json --fail-on-new
 | `--url` | | 헤드리스 브라우저로 구동·캡처할 대상 URL | |
 | `--wait` | | 페이지 로드 후 늦은 요청까지 캡처할 대기 시간 (`--url`) | `3s` |
 | `--timeout` | | 브라우저 캡처 전체 상한 (`--url`) | `30s` |
+| `--insecure` | `-k` | 잘못된 TLS 인증서 허용 — 자체 서명·내부 CA 환경 (`--url`) | `false` |
 | `--primary-domain` | | 1st-party 도메인 (반복 지정 가능, 서브도메인 포함 매칭) | `--url`의 eTLD+1 |
 | `--output` | `-o` | 출력 파일 (미지정 시 stdout) | stdout |
 | `--format` | `-f` | 출력 포맷: `json` 또는 `csv` | `json` |
