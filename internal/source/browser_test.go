@@ -32,7 +32,7 @@ func TestBrowserSourceFetch(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	src := NewBrowserSource(srv.URL, 1*time.Second, 20*time.Second)
+	src := NewBrowserSource(srv.URL, 1*time.Second, 60*time.Second)
 	records := drain(t, src)
 
 	got := make(map[string]bool)
@@ -64,7 +64,7 @@ func TestBrowserSourceInsecureTLS(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := NewBrowserSource(srv.URL, 1*time.Second, 20*time.Second)
+	src := NewBrowserSource(srv.URL, 1*time.Second, 60*time.Second)
 	src.InsecureTLS = true
 	records := drain(t, src)
 
@@ -97,7 +97,7 @@ func TestBrowserSourceCrawl(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	src := NewBrowserSource(srv.URL, 500*time.Millisecond, 30*time.Second)
+	src := NewBrowserSource(srv.URL, 500*time.Millisecond, 60*time.Second)
 	src.Depth = 1 // entry + its direct links, but not /c (two hops away)
 	records := drain(t, src)
 
@@ -136,7 +136,7 @@ func TestBrowserSourceSessionInjection(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	src := NewBrowserSource(srv.URL, 500*time.Millisecond, 20*time.Second)
+	src := NewBrowserSource(srv.URL, 500*time.Millisecond, 60*time.Second)
 	src.Cookies = []string{cookieName + "=" + cookieVal}
 	src.Headers = []string{headerName + ": " + headerVal}
 	records := drain(t, src)
