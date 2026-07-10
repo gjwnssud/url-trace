@@ -7,10 +7,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newRootCmd() *cobra.Command {
+func newRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
-		Use:   "url-trace",
-		Short: "Collect URLs from traffic and crawls to build whitelist policies",
+		Use:     "url-trace",
+		Version: version,
+		Short:   "Collect URLs from traffic and crawls to build whitelist policies",
 		Long: "url-trace extracts the URLs an application actually uses and " +
 			"aggregates them into audit-friendly records for whitelist policy review.",
 		// Let main.go be the single place that prints the error, so it is not
@@ -23,6 +24,6 @@ func newRootCmd() *cobra.Command {
 }
 
 // Execute runs the root command with the given context and returns its error.
-func Execute(ctx context.Context) error {
-	return newRootCmd().ExecuteContext(ctx)
+func Execute(ctx context.Context, version string) error {
+	return newRootCmd(version).ExecuteContext(ctx)
 }

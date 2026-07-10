@@ -24,7 +24,17 @@
 
 > 브라우저 캡처에는 로컬에 Chrome 또는 Chromium 설치가 필요하다.
 
-## 빌드
+## 설치
+
+```sh
+# Go가 있으면
+go install github.com/gjwnssud/url-trace@latest
+
+# 또는 GitHub Releases에서 플랫폼별 바이너리 다운로드
+# https://github.com/gjwnssud/url-trace/releases
+```
+
+소스 빌드:
 
 ```sh
 go build -o bin/url-trace .
@@ -139,7 +149,11 @@ url-trace/
 - **Phase 3** (완료): 경로 패턴 제안(보수적), 1st/3rd-party 분류, 신뢰도 점수
 - **Phase 4** (완료): 정책 export(승인 워크플로우)·기존 정책 대비 diff·CI 게이트
 - **Phase 5** (완료): 설정 기반 범용 SQL export (`--sql-config`)
-- **다음**: GoReleaser 배포
+- **Phase 6** (완료): MIT 라이선스, GoReleaser 릴리즈 + GitHub Actions CI
+
+## 라이선스
+
+[MIT](LICENSE)
 
 ## 테스트
 
