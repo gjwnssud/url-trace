@@ -27,6 +27,9 @@
 ## 설치
 
 ```sh
+# Homebrew (macOS/Linux)
+brew install gjwnssud/tap/url-trace
+
 # Go가 있으면
 go install github.com/gjwnssud/url-trace@latest
 

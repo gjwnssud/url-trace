@@ -34,6 +34,19 @@ archives:
 checksum:
   name_template: checksums.txt
 
+brews:
+  - name: url-trace
+    repository:
+      owner: gjwnssud
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/gjwnssud/url-trace
+    description: "Extract the URLs an application actually uses, for whitelist policies"
+    license: MIT
+    test: |
+      system "#{bin}/url-trace", "--version"
+
 changelog:
   sort: asc
   filters:
