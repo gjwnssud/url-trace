@@ -99,6 +99,67 @@ url-trace diff --policy policy.json -i rerun.json --fail-on-new
 - 정책 파일은 `{version, rules[]}` 스키마이며 각 규칙에 관측 근거(출처·빈도·시간)가 보존됨. 다른 시스템 전용 포맷은 이 스키마 위에 어댑터로 추가하면 된다(`internal/sqlexport` 참조)
 - 입력 경로에 `-`를 주면 stdin — extract와 파이프 조합 가능
 
+## Chrome 확장 (`extension/`)
+
+CLI의 능동 수집(chromedp)은 인증·SPA·중복 로그인 세션 만료 문제를 `--cookie`/`--headful`
+같은 우회책으로 다뤄야 한다. 근본적인 대안은 **사용자 본인 브라우저 세션을 그대로
+관찰**하는 것 — Chrome 확장이 `chrome.webRequest`로 사용자가 평소처럼 앱을 쓰는 동안의
+요청을 수동(passive) 관찰한다. 쿠키 주입도, 중복 로그인도 필요 없다.
+
+파이프라인 로직(정규화·집계·분류·패턴 제안·정책 빌드/diff/SQL export)은 재구현하지
+않는다 — 이 로직이 CLI와 확장에서 갈라지면 보안 민감 규칙(재현율 우선, 과잉일반화 금지)이
+표류할 수 있기 때문이다. 대신 **Go 코어를 WASM으로 컴파일**해 확장에서 그대로 호출한다
+(`wasm/main_js.go`). 확장이 새로 구현하는 건 캡처 계층(`extension/src/background.ts`)뿐이다.
+
+```sh
+cd extension
+npm install
+npm run build      # go build (GOOS=js GOARCH=wasm) + wasm_exec.js 복사 + esbuild 번들
+```
+
+`chrome://extensions` → 개발자 모드 → "압축해제된 확장 프로그램 로드" → `extension/` 선택.
+
+사용법: 팝업에서 대상 도메인 입력 → 녹화 시작(해당 도메인 권한을 그때 요청 —
+`<all_urls>`를 기본 부여하지 않음) → 대상 앱을 평소처럼 사용 → 정지 →
+Result JSON/HAR/CSV 내보내기. Result JSON은 CLI의 `extract` 출력과 완전히 동일한
+스키마이므로 그대로 파이프 가능. 녹화 중 팝업·정책 검토 페이지 자신을 여닫아도 그
+페이지의 리소스 요청(`chrome-extension://...`)은 자동으로 캡처에서 제외된다 — 대상
+앱의 트래픽만 남는다:
+
+```sh
+url-trace export -i url-trace-result.json --min-confidence medium -o policy.json
+url-trace diff --policy policy.json -i url-trace-result.json
+```
+
+CLI 없이 확장만으로도 같은 워크플로우를 끝낼 수 있다 — 팝업의 "정책 검토" 링크가
+`review.html`(별도 탭)을 연다:
+
+1. **데이터 불러오기**: 현재 캡처를 바로 불러오거나, 이전에 내보낸 Result JSON을 업로드
+2. **패턴 승인 → 정책 생성**: 제안된 와일드카드 패턴을 체크박스로 승인(승인한 것만 규칙으로
+   붕괴, 나머지는 exact 규칙), 최소 신뢰도·party로 필터 → `policy.json` 다운로드
+3. **SQL export (선택)**: 테이블/컬럼 매핑 설정 JSON을 업로드하면 INSERT SQL 다운로드.
+   실제 매핑 파일은 로컬에만 두고 커밋하지 않는다(CLI의 `--sql-config`와 동일한 원칙)
+4. **정책 diff**: 기존 `policy.json`을 업로드해 1번에서 불러온 결과와 비교 — 신규 URL과
+   미사용 규칙을 표로 확인
+
+이 4단계는 CLI의 `export`/`diff` 커맨드와 완전히 동일한 Go 로직(WASM 경유)을 쓴다 — 결과가
+갈릴 수 없다.
+
+### 배포 준비 (Chrome 웹스토어)
+
+```sh
+cd extension
+npm run package       # 런타임에 필요한 파일만 package/url-trace-extension-vX.Y.Z.zip으로 압축
+npm run screenshots   # 리스팅용 스크린샷 자동 생성 (store-assets/screenshots/) — Chromium 필요, 아래 참고
+```
+
+- `PRIVACY.md`: 개인정보 처리방침 초안 (모든 처리 로컬, 전송 없음)
+- `STORE_LISTING.md`: 제목/설명/카테고리/권한별 justification 초안
+- `npm run screenshots`는 실제 빌드된 확장을 브라우저에 로드해 팝업·정책 검토 화면을
+  캡처한다. **공식 Google Chrome(브랜드 빌드)는 `--load-extension`을 무시**하므로
+  Chromium이 필요하다: `brew install --cask chromium` 후
+  `CHROME_PATH="/Applications/Chromium.app/Contents/MacOS/Chromium" npm run screenshots`
+
 ### 플래그
 
 | 플래그 | 단축 | 설명 | 기본값 |
@@ -155,19 +216,22 @@ url-trace diff --policy policy.json -i rerun.json --fail-on-new
 url-trace/
 ├── main.go              # 진입점, 시그널 기반 컨텍스트 취소
 ├── cmd/                 # cobra CLI (root, extract, export, diff)
-└── internal/
-    ├── model/           # URLRecord, PatternSuggestion, Result (감사 메타 포함 공통 타입)
-    ├── source/          # Source 인터페이스 + HAR / 브라우저(chromedp) 소스
-    ├── pipeline/        # 정규화 + 중복 제거/집계
-    ├── classify/        # 1st/3rd-party 분류 + 신뢰도 점수
-    ├── patterns/        # 보수적 와일드카드 패턴 제안
-    ├── policy/          # 정책 빌드(승인 워크플로우)·매칭·diff
-    ├── sqlexport/       # 설정 기반 범용 테이블/컬럼 매핑 (INSERT SQL)
-    └── output/          # JSON / CSV 직렬화
+├── internal/
+│   ├── model/           # URLRecord, PatternSuggestion, Result (감사 메타 포함 공통 타입)
+│   ├── source/          # Source 인터페이스 + HAR / 브라우저(chromedp) 소스
+│   ├── pipeline/        # 정규화 + 중복 제거/집계
+│   ├── classify/        # 1st/3rd-party 분류 + 신뢰도 점수
+│   ├── patterns/        # 보수적 와일드카드 패턴 제안
+│   ├── policy/          # 정책 빌드(승인 워크플로우)·매칭·diff
+│   ├── sqlexport/       # 설정 기반 범용 테이블/컬럼 매핑 (INSERT SQL)
+│   └── output/          # JSON / CSV 직렬화
+├── wasm/                # internal/* 파이프라인을 syscall/js로 노출하는 WASM 브리지
+└── extension/           # Chrome 확장 (MV3, TypeScript) — wasm/의 WASM 산출물을 호출
 ```
 
 `Source`는 인터페이스로 추상화되어 있어, HAR·브라우저 캡처가 동일한 파이프라인으로
-합류한다. 향후 능동 크롤러도 이 인터페이스만 구현하면 변경 없이 얹힌다.
+합류한다. 확장의 캡처(`chrome.webRequest`)도 같은 원칙 — 캡처 계층만 다르고
+정규화/집계/분류/패턴 제안/정책 로직은 `internal/*`(WASM 경유) 한 곳에만 존재한다.
 
 ## 로드맵
 
@@ -176,6 +240,11 @@ url-trace/
 - **Phase 4** (완료): 정책 export(승인 워크플로우)·기존 정책 대비 diff·CI 게이트
 - **Phase 5** (완료): 설정 기반 범용 SQL export (`--sql-config`)
 - **Phase 6** (완료): MIT 라이선스, GoReleaser 릴리즈 + GitHub Actions CI
+- **Phase 7** (진행 중): Chrome 확장 — Go 코어 WASM 재사용, `chrome.webRequest` 수동 캡처로
+  인증/SPA/중복 로그인 문제 원천 해결. 캡처+extract 대응(MVP), 정책 export/diff 검토
+  페이지(`review.html`) 완료. 웹스토어 제출 준비 완료 — 개인정보 처리방침·리스팅 문안·
+  권한 점검·zip 패키징 스크립트·리스팅용 스크린샷(`store-assets/screenshots/`) 전부 준비됨.
+  남은 건 Chrome 웹스토어에 실제 제출(개발자 계정 필요, 사용자 직접 진행)뿐
 
 ## 라이선스
 
@@ -185,4 +254,10 @@ url-trace/
 
 ```sh
 go test ./...
+
+# WASM 브리지 컴파일 확인 (다른 GOOS/GOARCH라 위 테스트에 포함 안 됨)
+GOOS=js GOARCH=wasm go build -o /dev/null ./wasm
+
+# 확장
+cd extension && npm run typecheck && npm run build
 ```

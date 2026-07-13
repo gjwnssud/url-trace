@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>url-trace 정책 검토</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      body {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 20px 24px 60px;
+      }
+      section {
+        margin-bottom: 8px;
+      }
+      .filters {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      .filters label {
+        margin: 0;
+        font-weight: 400;
+        opacity: 0.8;
+      }
+      ul.warnings {
+        margin: 6px 0 0;
+        padding-left: 18px;
+        color: #b45309;
+      }
+      #patternList {
+        max-height: 260px;
+        overflow-y: auto;
+        border: 1px solid rgba(127, 127, 127, 0.2);
+        border-radius: 6px;
+        padding: 6px 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>url-trace 정책 검토</h1>
+    <p class="tagline">패턴 승인 → 정책 생성 → (선택) SQL export → 재수집 결과와 diff.</p>
+
+    <section>
+      <h2>1. 데이터 불러오기</h2>
+      <div class="row">
+        <button id="loadCaptureBtn">현재 캡처 불러오기</button>
+        <label for="resultFileInput" class="hint" style="margin: 0">또는 Result JSON 업로드:</label>
+        <input id="resultFileInput" type="file" accept="application/json" />
+      </div>
+      <div id="loadStatus" class="message info"></div>
+    </section>
+
+    <section>
+      <h2>2. 패턴 승인 → 정책 생성</h2>
+      <div class="filters">
+        <label
+          >최소 신뢰도
+          <select id="minConfidence">
+            <option value="">전체</option>
+            <option value="low">low 이상</option>
+            <option value="medium">medium 이상</option>
+            <option value="high">high만</option>
+          </select>
+        </label>
+        <label
+          >party
+          <select id="partyFilter">
+            <option value="">전체</option>
+            <option value="first-party">first-party</option>
+            <option value="third-party">third-party</option>
+            <option value="unknown">unknown</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">체크한 패턴만 와일드카드 규칙으로 승인된다 — 나머지 관측 URL은 각각 exact 규칙이 된다.</p>
+      <div id="patternList"><p class="empty">먼저 데이터를 불러오세요.</p></div>
+      <div class="row" style="margin-top: 10px">
+        <button id="buildPolicyBtn" disabled>정책 생성</button>
+        <button id="downloadPolicyBtn" disabled>policy.json 다운로드</button>
+      </div>
+      <div id="policySummary" class="message info"></div>
+    </section>
+
+    <section>
+      <h2>3. SQL Export (선택)</h2>
+      <p class="hint">테이블/컬럼 매핑 설정 JSON을 업로드한다 — 실제 스키마는 로컬 파일로만 다루고 커밋하지 않는다.</p>
+      <div class="row">
+        <input id="sqlConfigFileInput" type="file" accept="application/json" />
+        <button id="generateSqlBtn" disabled>SQL 생성</button>
+        <button id="downloadSqlBtn" disabled>.sql 다운로드</button>
+      </div>
+      <div id="sqlSummary" class="message info"></div>
+    </section>
+
+    <section>
+      <h2>4. 정책 Diff</h2>
+      <p class="hint">기존 policy.json을 업로드해 위 1번에서 불러온 결과와 비교한다 (신규 URL · 미사용 규칙).</p>
+      <div class="row">
+        <input id="policyFileInput" type="file" accept="application/json" />
+        <button id="diffBtn" disabled>비교</button>
+      </div>
+      <div id="diffSummary" class="message info"></div>
+      <table id="newUrlsTable" style="display: none">
+        <thead>
+          <tr>
+            <th>신규 URL</th>
+            <th>party</th>
+            <th>confidence</th>
+            <th>count</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <table id="unusedRulesTable" style="display: none">
+        <thead>
+          <tr>
+            <th>미사용 규칙</th>
+            <th>party</th>
+            <th>count</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <script src="public/wasm_exec.js"></script>
+    <script src="dist/review.js"></script>
+  </body>
+</html>

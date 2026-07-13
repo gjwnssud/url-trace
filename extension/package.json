@@ -1,0 +1,21 @@
+{
+  "name": "url-trace-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension companion to the url-trace CLI: captures real network requests via chrome.webRequest and runs them through the same Go pipeline (compiled to WASM) that the CLI uses.",
+  "type": "module",
+  "scripts": {
+    "build:wasm": "GOOS=js GOARCH=wasm go build -o public/url-trace.wasm ../wasm && cp \"$(go env GOROOT)/lib/wasm/wasm_exec.js\" public/wasm_exec.js",
+    "build:js": "node esbuild.config.mjs",
+    "build": "npm run build:wasm && npm run build:js",
+    "typecheck": "tsc --noEmit",
+    "verify:wasm": "node scripts/verify-wasm.mjs",
+    "package": "bash scripts/package.sh",
+    "screenshots": "go run ./scripts/screenshots"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.280",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}

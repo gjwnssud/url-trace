@@ -2,6 +2,14 @@
 /bin/
 /dist/
 
+# Chrome extension: npm deps and everything the build regenerates
+# (public/url-trace.wasm + wasm_exec.js come from `npm run build:wasm`)
+extension/node_modules/
+extension/dist/
+extension/public/url-trace.wasm
+extension/public/wasm_exec.js
+extension/package/
+
 # Test & coverage
 *.test
 coverage.out

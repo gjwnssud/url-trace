@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>url-trace</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      body {
+        width: 340px;
+      }
+      .exports {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .exports button {
+        flex: 1;
+      }
+      .row button {
+        flex: 1;
+      }
+      #reviewLink {
+        display: block;
+        text-align: center;
+        margin-top: 4px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>url-trace Capture</h1>
+    <p class="tagline">앱을 평소처럼 사용하는 동안 실제 요청을 관찰합니다. 쿠키 주입·중복 로그인 없음.</p>
+
+    <label for="domains">대상 도메인 (쉼표로 구분)</label>
+    <input id="domains" type="text" placeholder="https://app.example.com/*, app2.example.com" />
+    <p class="hint">전체 URL 패턴 또는 맨 도메인만 입력해도 됩니다.</p>
+
+    <div class="row">
+      <button id="startBtn">녹화 시작</button>
+      <button id="stopBtn">정지</button>
+      <button id="clearBtn">초기화</button>
+    </div>
+
+    <div class="status">
+      <span><span id="dot" class="dot"></span><span id="statusText">대기 중</span></span>
+      <span id="count">0건</span>
+    </div>
+
+    <div class="exports">
+      <button id="exportJson">Result JSON</button>
+      <button id="exportHar">HAR</button>
+      <button id="exportCsv">CSV</button>
+    </div>
+
+    <a href="#" id="reviewLink">정책 검토(패턴 승인 · SQL export · diff) 열기 →</a>
+
+    <div id="message" class="message"></div>
+
+    <script src="public/wasm_exec.js"></script>
+    <script src="dist/popup.js"></script>
+  </body>
+</html>

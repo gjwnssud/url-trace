@@ -1,0 +1,118 @@
+# Chrome Web Store 제출 문안 (초안)
+
+개발자 대시보드(chrome.google.com/webstore/devconsole)에 그대로 붙여넣을 수 있도록
+정리한 초안. 실제 제출 전에 스크린샷·프로모 타일만 채우면 된다.
+
+## 기본 정보
+
+- **이름**: `url-trace Capture`
+- **카테고리**: Developer Tools
+- **언어**: Korean (필요 시 English 버전 별도 등록 가능)
+
+## 짧은 설명 (132자 이내, 검색 결과에 노출)
+
+```
+앱을 평소처럼 쓰는 동안 실제 요청 URL을 관찰해 화이트리스트 정책용 목록으로 정리합니다. 쿠키 주입·중복 로그인 없음.
+```
+(66자)
+
+## 상세 설명
+
+```
+url-trace Capture는 애플리케이션이 실제로 호출하는 URL을 수집해, URL 화이트리스트
+정책을 만들 때 쓸 수 있는 감사 친화적 목록으로 정리하는 확장입니다.
+
+■ 왜 필요한가
+방화벽/프록시의 URL 화이트리스트 정책을 만들려면 "이 앱이 실제로 어떤 URL을
+호출하는가"를 빠짐없이 파악해야 합니다. 트래픽을 수동으로 캡처하거나, 쿠키를
+복사해 자동화 도구에 주입하는 방식은 인증 세션이 꼬이거나(중복 로그인으로 세션
+만료) 페이지를 놓치는 문제가 흔합니다.
+
+■ 어떻게 다른가
+이 확장은 당신이 브라우저에서 실제로 로그인해 앱을 쓰는 동안의 요청을 그대로
+관찰합니다. 쿠키를 주입하지 않고, 별도 로그인도 필요 없습니다 — 이미 인증된
+당신의 세션을 옆에서 지켜볼 뿐입니다.
+
+■ 무엇을 만들어주는가
+- 관측된 URL 목록 (출처·빈도·최초/최종 관측 시각 포함)
+- 기계 생성 세그먼트(숫자 ID, UUID 등)가 3회 이상 반복될 때만 제안하는 보수적
+  와일드카드 패턴(자동 적용 안 함 — 항상 사람이 승인)
+- 사람이 승인한 패턴만 반영하는 화이트리스트 정책 파일(JSON)
+- 재수집 결과와 기존 정책을 비교해 신규 URL·미사용 규칙을 보여주는 diff
+- 필요 시 SQL INSERT 문 (테이블/컬럼 매핑은 사용자가 직접 업로드하는 설정 파일로
+  정의 — 실제 스키마는 개발자 서버로 전송되지 않습니다)
+
+■ 개인정보
+이 확장은 아무 데이터도 수집·전송하지 않습니다. 모든 처리(정규화, 집계, 분류,
+패턴 제안, 정책 생성)는 브라우저 안에서 WebAssembly로 실행되며, 오픈소스
+url-trace CLI와 완전히 동일한 코드입니다. 데이터가 브라우저 밖으로 나가는
+유일한 경우는 사용자가 직접 "다운로드" 버튼을 눌러 파일로 저장할 때뿐입니다.
+
+■ 오픈소스
+전체 소스코드: https://github.com/gjwnssud/url-trace
+```
+
+## Single purpose description (필수 입력란)
+
+```
+Observes the network requests a web app makes (only for domains the user
+explicitly grants), and turns them into an audit-friendly URL list for
+building a URL allowlist/whitelist policy.
+```
+
+## 원격 코드 사용 여부
+
+**No.** 모든 코드(팝업/백그라운드/리뷰 페이지 JS, WASM 바이너리)는 패키지에
+번들되어 있으며 런타임에 원격에서 가져오지 않는다. CSP도
+`script-src 'self' 'wasm-unsafe-eval'`로 자기 자신만 허용 — `wasm-unsafe-eval`은
+번들 동봉된 WASM을 브라우저에서 컴파일·실행하기 위한 표준 요구사항일 뿐, 원격
+스크립트 평가와는 무관.
+
+## 권한별 정당화 (Justification 입력란)
+
+| 권한 | 정당화 문구 |
+|------|------------|
+| `webRequest` | "Observes request URLs (not bodies/headers/cookies) on domains the user explicitly starts recording for, to build a URL allowlist candidate list. No requests are blocked or modified." |
+| `storage` | "Holds the in-progress capture buffer and the user's saved domain-pattern text locally, so recording survives the service worker's normal suspend/resume cycle." |
+| `downloads` | "Lets the user save the Result JSON / HAR / CSV / policy.json / SQL files they generate to their own device." |
+| `optional_host_permissions` (`<all_urls>`, 런타임 요청) | "No host access is granted by default. The extension requests permission only for the exact domain pattern(s) the user types in before recording starts, via Chrome's own permission prompt. Users can revoke at any time from chrome://extensions." |
+
+## 데이터 사용 공개 (Data usage 탭 체크박스)
+
+아래 항목 전부 **해당 없음(수집 안 함)** 으로 체크:
+- Personally identifiable information
+- Health info
+- Financial and payment info
+- Authentication info
+- Personal communications
+- Location
+- Web history
+- User activity
+- Website content
+
+근거: 관측된 URL은 브라우저 밖으로 전송되지 않고(서버 없음), 사용자가 명시적으로
+다운로드하기 전까지 로컬 `chrome.storage.session`에만 머문다. "Web history"류
+체크박스는 통상 브라우징 기록을 수집·전송하는 확장에 해당하는 것으로, 로컬
+처리만 하고 전송하지 않는 이 확장에는 해당하지 않는다(단, 정책 상 애매하면 폼의
+문구를 다시 확인해 보수적으로 표시할 것 — 최종 판단은 제출자 책임).
+
+## 개인정보 처리방침 URL
+
+```
+https://github.com/gjwnssud/url-trace/blob/main/extension/PRIVACY.md
+```
+
+## 권한 최종 점검 (2026-07-13)
+
+manifest.json의 4개 권한(`webRequest`/`storage`/`downloads`/`optional_host_permissions`)을
+실제 코드 사용처와 대조 확인 — 전부 실사용 중이며 더 넓은 권한(`tabs`, `activeTab`,
+`<all_urls>`을 `host_permissions`에 상시 등록 등)은 요청하지 않는다. `chrome.tabs.create`
+(팝업→리뷰 페이지 이동)는 자체 확장 페이지 URL을 여는 것뿐이라 `tabs` 권한이 필요 없다.
+
+## 스크린샷 (준비 필요 — extension/store-assets/screenshots/)
+
+1. `1-popup.png` — 팝업: 대상 도메인 입력 + 녹화 중 상태 + 캡처 건수
+2. `2-review.png` — 정책 검토 페이지: 패턴 승인 체크박스 + 생성된 정책 요약
+
+Chrome Web Store 요구사항: 1280x800 또는 640x400, 최소 1장·최대 5장, PNG/JPEG.
+현재 창 크기(1000x900)로 캡처된 이미지는 필요 시 여백을 잘라 비율을 맞출 것.
