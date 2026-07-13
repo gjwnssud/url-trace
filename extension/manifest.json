@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "url-trace Capture",
   "version": "0.1.0",
-  "description": "Passively observes an app's real network requests while you use it, and turns them into url-trace's audit-friendly whitelist records — no cookie injection, no duplicate-login session expiry.",
+  "description": "Observes real network requests as you use an app, building url-trace audit records for URL allowlist policies. All local.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

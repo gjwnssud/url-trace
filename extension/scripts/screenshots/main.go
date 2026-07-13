@@ -27,9 +27,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/png"
 	"io"
 	"log"
 	"net/http"
@@ -40,6 +44,15 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+)
+
+// storeCanvasWidth/Height match Chrome Web Store's required screenshot size
+// (1280x800 or 640x400 — anything else is rejected at upload). The actual UI
+// is captured at its native size and centered on this canvas rather than
+// stretched, so it stays crisp.
+const (
+	storeCanvasWidth  = 1280
+	storeCanvasHeight = 800
 )
 
 // testPageHTML fires several fetches designed to exercise both aggregation
@@ -276,10 +289,37 @@ func findExtensionID(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no chrome-extension:// target appeared (extension failed to load)")
 }
 
+// screenshotElement captures sel at its native content size, then centers it
+// on a storeCanvasWidth x storeCanvasHeight canvas filled with the
+// screenshot's own corner pixel color (the page's actual background, so the
+// padding blends in seamlessly instead of showing a mismatched border).
 func screenshotElement(ctx context.Context, sel, path string) error {
 	var buf []byte
 	if err := chromedp.Run(ctx, chromedp.Screenshot(sel, &buf, chromedp.ByQuery)); err != nil {
 		return fmt.Errorf("screenshot %s: %w", path, err)
 	}
-	return os.WriteFile(path, buf, 0o644)
+
+	src, err := png.Decode(bytes.NewReader(buf))
+	if err != nil {
+		return fmt.Errorf("decode screenshot %s: %w", path, err)
+	}
+	sb := src.Bounds()
+	if sb.Dx() > storeCanvasWidth || sb.Dy() > storeCanvasHeight {
+		return fmt.Errorf("%s: captured content %dx%d exceeds the %dx%d store canvas — shrink the browser window or the page content",
+			path, sb.Dx(), sb.Dy(), storeCanvasWidth, storeCanvasHeight)
+	}
+
+	canvas := image.NewRGBA(image.Rect(0, 0, storeCanvasWidth, storeCanvasHeight))
+	bg := src.At(sb.Min.X, sb.Min.Y)
+	draw.Draw(canvas, canvas.Bounds(), image.NewUniform(bg), image.Point{}, draw.Src)
+
+	offset := image.Pt((storeCanvasWidth-sb.Dx())/2, (storeCanvasHeight-sb.Dy())/2)
+	draw.Draw(canvas, sb.Add(offset).Sub(sb.Min), src, sb.Min, draw.Over)
+
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return png.Encode(f, canvas)
 }

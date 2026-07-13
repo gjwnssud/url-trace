@@ -109,10 +109,13 @@ manifest.json의 4개 권한(`webRequest`/`storage`/`downloads`/`optional_host_p
 `<all_urls>`을 `host_permissions`에 상시 등록 등)은 요청하지 않는다. `chrome.tabs.create`
 (팝업→리뷰 페이지 이동)는 자체 확장 페이지 URL을 여는 것뿐이라 `tabs` 권한이 필요 없다.
 
-## 스크린샷 (준비 필요 — extension/store-assets/screenshots/)
+## 스크린샷 (완료 — extension/store-assets/screenshots/)
 
 1. `1-popup.png` — 팝업: 대상 도메인 입력 + 녹화 중 상태 + 캡처 건수
 2. `2-review.png` — 정책 검토 페이지: 패턴 승인 체크박스 + 생성된 정책 요약
 
-Chrome Web Store 요구사항: 1280x800 또는 640x400, 최소 1장·최대 5장, PNG/JPEG.
-현재 창 크기(1000x900)로 캡처된 이미지는 필요 시 여백을 잘라 비율을 맞출 것.
+Chrome Web Store는 스크린샷이 **정확히** 1280x800 또는 640x400이어야 업로드된다
+(그 외 크기는 "이미지 크기가 잘못되었습니다" 오류로 거부됨 — 최소 크기가 아니라
+정확한 캔버스 크기 요구). `scripts/screenshots`가 실제 UI를 원본 크기로 캡처한 뒤
+1280x800 캔버스 중앙에 배치하고, 캡처된 이미지 자신의 모서리 픽셀 색으로 여백을
+채워 이음매 없이 보이게 만든다(`image`/`image/draw` 표준 라이브러리만 사용).
