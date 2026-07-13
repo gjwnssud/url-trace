@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "url-trace Capture",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Observes real network requests as you use an app, building url-trace audit records for URL allowlist policies. All local.",
   "icons": {
     "16": "icons/icon16.png",
