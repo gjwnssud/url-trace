@@ -2,7 +2,7 @@
 // (see internal/source's package doc): this file's only job is "observe
 // requests and hand over raw records" — normalization, dedup, classification
 // and pattern suggestion all happen later, in WASM, driven by popup.ts.
-import { isOwnResourceURL } from "./records";
+import { hostOf, isOwnResourceURL, normalizeLink } from "./records";
 import type { CapturedRequest } from "./types";
 
 // The in-memory buffer is the source of truth while this service worker
@@ -70,39 +70,170 @@ chrome.permissions.getAll().then((perms) => {
 });
 chrome.permissions.onAdded.addListener(() => registerCaptureListener());
 
+// --- Optional auto-crawl -----------------------------------------------
+//
+// Recording alone requires a human to browse the target app; auto-crawl is
+// an opt-in addition that follows same-host links breadth-first, mirroring
+// internal/source/browser.go's crawl() on the CLI side (Depth/MaxPages) —
+// but it runs inside the SAME already-authenticated browser profile via a
+// dedicated background tab (chrome.tabs), not a fresh chromedp session, so
+// it never hits the duplicate-login problem that motivated this extension.
+// Only one crawl runs at a time.
+interface CrawlItem {
+  url: string;
+  depth: number;
+}
+
+let crawling = false;
+let crawlPagesVisited = 0;
+let crawlMaxPages = 0;
+let crawlCancelRequested = false;
+
+// waitForTabComplete resolves once tabId reaches "complete". The listener is
+// attached BEFORE returning, so callers that are about to trigger a
+// navigation must call this first and await its promise only after starting
+// the navigation — attaching after chrome.tabs.update() races: tabs.update()
+// can return while chrome.tabs.get() still reports the PREVIOUS page's
+// "complete" status, so checking status first (this function used to) can
+// silently skip waiting for the new page entirely, then extract links from a
+// half-loaded (or stale) document. The immediate chrome.tabs.get() check
+// below instead covers the opposite race — a tab (e.g. one that
+// chrome.tabs.create() just started navigating) finishing before this
+// function was even called.
+function waitForTabComplete(tabId: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    };
+    const listener = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo): void => {
+      if (updatedTabId === tabId && changeInfo.status === "complete") finish();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs.get(tabId).then((tab) => {
+      if (tab.status === "complete") finish();
+    });
+  });
+}
+
+// Idle time after a page reaches "complete" for late XHR/fetch to still
+// fire, mirroring the CLI's --wait.
+function settleAfterLoad(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 1200));
+}
+
+async function extractLinks(tabId: number): Promise<string[]> {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => Array.from(document.querySelectorAll("a[href]")).map((a) => (a as HTMLAnchorElement).href),
+  });
+  return results[0]?.result ?? [];
+}
+
+async function runCrawl(rawSeedURL: string, depth: number, maxPages: number): Promise<void> {
+  if (crawling) return;
+  crawling = true;
+  crawlPagesVisited = 0;
+  crawlMaxPages = maxPages;
+  crawlCancelRequested = false;
+
+  // Canonicalize the seed the same way normalizeLink() canonicalizes every
+  // discovered link (e.g. new URL("http://h:1").toString() === "http://h:1/")
+  // — otherwise a link back to the bare origin never matches the seed in
+  // `visited` and the crawler burns a page revisiting where it started.
+  const seed = normalizeLink(rawSeedURL) || rawSeedURL;
+  const seedHost = hostOf(seed);
+  const visited = new Set<string>([seed]);
+  const queue: CrawlItem[] = [{ url: seed, depth: 0 }];
+
+  const tab = await chrome.tabs.create({ url: seed, active: false });
+  const tabId = tab.id;
+  if (tabId === undefined) {
+    crawling = false;
+    return;
+  }
+
+  try {
+    while (queue.length > 0 && crawlPagesVisited < maxPages && !crawlCancelRequested) {
+      const item = queue.shift();
+      if (!item) break;
+      if (item.url !== seed) {
+        const loaded = waitForTabComplete(tabId); // attach before navigating — see comment above
+        await chrome.tabs.update(tabId, { url: item.url });
+        await loaded;
+      } else {
+        await waitForTabComplete(tabId); // seed tab is already navigating from chrome.tabs.create()
+      }
+      await settleAfterLoad();
+      crawlPagesVisited++;
+
+      if (item.depth < depth) {
+        const links = await extractLinks(tabId).catch((err: unknown) => {
+          console.error("url-trace: link extraction failed on", item.url, err);
+          return [];
+        });
+        for (const href of links) {
+          const clean = normalizeLink(href);
+          if (!clean || visited.has(clean) || hostOf(clean) !== seedHost) continue;
+          visited.add(clean);
+          queue.push({ url: clean, depth: item.depth + 1 });
+        }
+      }
+    }
+  } finally {
+    await chrome.tabs.remove(tabId).catch(() => {});
+    crawling = false;
+  }
+}
+
 type Request =
   | { type: "getStatus" }
   | { type: "start" }
   | { type: "stop" }
   | { type: "clear" }
-  | { type: "export" };
+  | { type: "export" }
+  | { type: "crawl"; seedURL: string; depth: number; maxPages: number };
 
-type Response = { recording: boolean; count: number } | { captured: CapturedRequest[] };
+type Response =
+  | { recording: boolean; count: number; crawling: boolean; pagesVisited: number; maxPages: number }
+  | { captured: CapturedRequest[] };
 
 chrome.runtime.onMessage.addListener((message: Request, _sender, sendResponse: (r: Response) => void) => {
   void (async () => {
     await restored;
     switch (message.type) {
       case "getStatus":
-        sendResponse({ recording, count: buffer.length });
+        sendResponse({ recording, count: buffer.length, crawling, pagesVisited: crawlPagesVisited, maxPages: crawlMaxPages });
         return;
       case "start":
         recording = true;
         await chrome.storage.session.set({ recording: true });
-        sendResponse({ recording, count: buffer.length });
+        sendResponse({ recording, count: buffer.length, crawling, pagesVisited: crawlPagesVisited, maxPages: crawlMaxPages });
         return;
       case "stop":
         recording = false;
+        crawlCancelRequested = true;
         await chrome.storage.session.set({ recording: false });
-        sendResponse({ recording, count: buffer.length });
+        sendResponse({ recording, count: buffer.length, crawling, pagesVisited: crawlPagesVisited, maxPages: crawlMaxPages });
         return;
       case "clear":
         buffer = [];
         await chrome.storage.session.set({ captured: buffer });
-        sendResponse({ recording, count: buffer.length });
+        sendResponse({ recording, count: buffer.length, crawling, pagesVisited: crawlPagesVisited, maxPages: crawlMaxPages });
         return;
       case "export":
         sendResponse({ captured: buffer });
+        return;
+      case "crawl":
+        recording = true;
+        await chrome.storage.session.set({ recording: true });
+        void runCrawl(message.seedURL, message.depth, message.maxPages).catch((err: unknown) => {
+          console.error("url-trace: crawl failed", err);
+        });
+        sendResponse({ recording, count: buffer.length, crawling: true, pagesVisited: 0, maxPages: message.maxPages });
         return;
     }
   })();

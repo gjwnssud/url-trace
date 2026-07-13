@@ -15,17 +15,32 @@ const exportJsonBtn = byId<HTMLButtonElement>("exportJson");
 const exportHarBtn = byId<HTMLButtonElement>("exportHar");
 const exportCsvBtn = byId<HTMLButtonElement>("exportCsv");
 const reviewLink = byId<HTMLAnchorElement>("reviewLink");
+const crawlEnabled = byId<HTMLInputElement>("crawlEnabled");
+const crawlDepth = byId<HTMLInputElement>("crawlDepth");
+const crawlMaxPages = byId<HTMLInputElement>("crawlMaxPages");
+
+interface Status {
+  recording: boolean;
+  count: number;
+  crawling: boolean;
+  pagesVisited: number;
+  maxPages: number;
+}
 
 function setMessage(text: string, kind: "error" | "info" = "error"): void {
   setMessageOn(messageEl, text, kind);
 }
 
-function setStatus(recording: boolean, count: number): void {
-  dot.classList.toggle("on", recording);
-  statusText.textContent = recording ? "녹화 중" : "대기 중";
-  countEl.textContent = `${count}건`;
-  startBtn.disabled = recording;
-  stopBtn.disabled = !recording;
+function setStatus(status: Status): void {
+  dot.classList.toggle("on", status.recording);
+  statusText.textContent = status.crawling
+    ? `녹화 중 · 크롤 ${status.pagesVisited}/${status.maxPages}`
+    : status.recording
+      ? "녹화 중"
+      : "대기 중";
+  countEl.textContent = `${status.count}건`;
+  startBtn.disabled = status.recording;
+  stopBtn.disabled = !status.recording;
 }
 
 async function sendMessage<T>(message: unknown): Promise<T> {
@@ -33,8 +48,8 @@ async function sendMessage<T>(message: unknown): Promise<T> {
 }
 
 async function refreshStatus(): Promise<void> {
-  const res = await sendMessage<{ recording: boolean; count: number }>({ type: "getStatus" });
-  setStatus(res.recording, res.count);
+  const res = await sendMessage<Status>({ type: "getStatus" });
+  setStatus(res);
 }
 
 const STORAGE_KEY_PATTERNS = "domainPatterns";
@@ -65,22 +80,36 @@ startBtn.addEventListener("click", () => {
       return;
     }
     await chrome.storage.local.set({ [STORAGE_KEY_PATTERNS]: domainsInput.value });
-    const res = await sendMessage<{ recording: boolean; count: number }>({ type: "start" });
-    setStatus(res.recording, res.count);
+
+    if (crawlEnabled.checked) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const seedURL = tab?.url;
+      if (!seedURL || !/^https?:\/\//.test(seedURL)) {
+        setMessage("자동 크롤은 현재 탭이 http(s) 페이지여야 합니다 — 대상 앱 탭에서 눌러주세요.");
+        return;
+      }
+      const depth = Math.max(0, Number(crawlDepth.value) || 0);
+      const maxPages = Math.max(1, Number(crawlMaxPages.value) || 50);
+      const res = await sendMessage<Status>({ type: "crawl", seedURL, depth, maxPages });
+      setStatus(res);
+      setMessage(`자동 크롤 시작 — ${seedURL}에서 depth ${depth}까지 따라갑니다.`, "info");
+      return;
+    }
+
+    const res = await sendMessage<Status>({ type: "start" });
+    setStatus(res);
     setMessage("녹화 중 — 대상 앱을 평소처럼 사용하세요.", "info");
   })();
 });
 
 stopBtn.addEventListener("click", () => {
-  void sendMessage<{ recording: boolean; count: number }>({ type: "stop" }).then((res) =>
-    setStatus(res.recording, res.count)
-  );
+  void sendMessage<Status>({ type: "stop" }).then(setStatus);
 });
 
 clearBtn.addEventListener("click", () => {
   if (!confirm("캡처된 데이터를 모두 지울까요?")) return;
-  void sendMessage<{ recording: boolean; count: number }>({ type: "clear" }).then((res) => {
-    setStatus(res.recording, res.count);
+  void sendMessage<Status>({ type: "clear" }).then((res) => {
+    setStatus(res);
     setMessage("초기화했습니다.", "info");
   });
 });

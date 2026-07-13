@@ -25,6 +25,27 @@
         margin-top: 4px;
         font-size: 12px;
       }
+      .crawl-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: -2px 0 10px;
+      }
+      .crawl-row label.inline {
+        display: inline;
+        font-weight: 400;
+        opacity: 0.85;
+        margin: 0;
+      }
+      .crawl-row input[type="number"] {
+        width: 46px;
+        padding: 4px 6px;
+        margin: 0;
+      }
+      .crawl-row .num-label {
+        opacity: 0.65;
+        font-size: 12px;
+      }
     </style>
   </head>
   <body>
@@ -34,6 +55,15 @@
     <label for="domains">대상 도메인 (쉼표로 구분)</label>
     <input id="domains" type="text" placeholder="https://app.example.com/*, app2.example.com" />
     <p class="hint">전체 URL 패턴 또는 맨 도메인만 입력해도 됩니다.</p>
+
+    <div class="crawl-row">
+      <label class="inline" for="crawlEnabled"><input type="checkbox" id="crawlEnabled" /> 자동 크롤</label>
+      <span class="num-label">depth</span>
+      <input id="crawlDepth" type="number" min="0" max="5" value="1" />
+      <span class="num-label">최대 페이지</span>
+      <input id="crawlMaxPages" type="number" min="1" max="500" value="50" />
+    </div>
+    <p class="hint">체크하면 현재 탭 URL부터 같은 호스트 링크를 자동으로 따라가며 캡처합니다(별도 탭에서, 로그인 세션 그대로 사용).</p>
 
     <div class="row">
       <button id="startBtn">녹화 시작</button>

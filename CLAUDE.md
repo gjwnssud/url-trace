@@ -39,7 +39,7 @@
 | `internal/sqlexport` | 설정 기반 범용 SQL 매핑. 정책 의미론 금지 — 컬럼 렌더링만. **대상 스키마(테이블·컬럼명)를 코드에 넣지 말 것** — 전부 설정 파일 소관 |
 | `internal/output` | JSON/CSV 직렬화 |
 | `wasm/` | `internal/{pipeline,classify,patterns,policy,sqlexport}`를 syscall/js로 노출하는 브리지. `GOOS=js GOARCH=wasm` 전용(`main_js.go`) + 호스트 빌드용 빈 stub(`main_other.go`). **로직 추가 금지** — 기존 internal 함수 호출만 |
-| `extension/` | Chrome 확장(MV3, TypeScript). `chrome.webRequest`로 캡처(`background.ts`)만 새로 구현, 팝업(`popup.ts`)과 정책 검토 페이지(`review.ts`/`review.html` — 패턴 승인→정책 생성, SQL export, diff)는 전부 `wasm/`를 통해 `internal/*` 재사용. `scripts/verify-wasm.mjs`(브리지 4개 함수 실동작 검증, CI 포함), `scripts/package.sh`(제출용 zip), `scripts/screenshots/`(Go+chromedp로 실제 스크린샷 생성). `PRIVACY.md`/`STORE_LISTING.md`는 웹스토어 제출 문서 |
+| `extension/` | Chrome 확장(MV3, TypeScript). `chrome.webRequest`로 캡처(`background.ts`)만 새로 구현, 팝업(`popup.ts`)과 정책 검토 페이지(`review.ts`/`review.html` — 패턴 승인→정책 생성, SQL export, diff)는 전부 `wasm/`를 통해 `internal/*` 재사용. 선택적 자동 크롤(`tabs`+`scripting`, 같은 인증 세션의 백그라운드 탭에서 링크 BFS — CLI `browser.go`의 crawl()과 같은 개념이지만 재구현이 아니라 캡처 계층의 새 코드)도 `background.ts`에 포함. `scripts/verify-wasm.mjs`(브리지 4개 함수 실동작 검증, CI 포함), `scripts/package.sh`(제출용 zip), `scripts/screenshots/`(Go+chromedp로 실제 스크린샷 생성). `PRIVACY.md`/`STORE_LISTING.md`는 웹스토어 제출 문서 |
 
 새 export 포맷은 `internal/policy` 위에 얇은 어댑터 패키지로 추가한다(sqlexport 참조).
 CLI와 확장은 서로 다른 캡처 계층일 뿐, 파이프라인 의미론(정규화·분류·패턴 제안·정책)의
@@ -61,6 +61,11 @@ GOOS=js GOARCH=wasm go build -o /dev/null ./wasm
 `internal/{pipeline,classify,patterns,policy,sqlexport}`를 건드리면 wasm 빌드도 확인할 것
 (`wasm/`가 그 패키지들을 그대로 재노출하므로 시그니처 변경이 여기서도 깨진다).
 확장(`extension/`)을 건드리면 `npm run typecheck && npm run build`(내부에서 wasm도 다시 빌드).
+`background.ts`의 캡처/크롤 로직(비동기 탭·이벤트 타이밍)은 CI에 자동화 테스트가 없다
+(공식 Chrome은 자동화 로드를 막고, Chromium 의존은 CI에 안 둠) — 건드리면
+`CHROME_PATH=<Chromium 경로> go run ./scripts/screenshots`로 최소 한 번은 실제
+브라우저에서 캡처가 되는지 확인할 것. 타이밍 관련 코드는 몇 번 반복 실행해 간헐적
+실패가 없는지도 볼 것(위 tabs.onUpdated race처럼 1~2회는 통과해도 재현될 수 있다).
 
 ## 주의점
 
@@ -86,3 +91,8 @@ GOOS=js GOARCH=wasm go build -o /dev/null ./wasm
 - 공식 Google Chrome(브랜드 빌드)은 `--load-extension`/`--disable-extensions-except`를
   무시한다("is not allowed in Google Chrome, ignoring") — `scripts/screenshots`처럼
   자동화로 확장을 로드해야 하면 Chromium(오픈소스 빌드)에 `CHROME_PATH`로 지정할 것
+- `background.ts`의 크롤러에서 `chrome.tabs.update()` 호출 **후** `chrome.tabs.get()`으로
+  로드 완료를 확인하면 race condition이 생긴다 — update()가 반환된 시점에도 get()이
+  아직 이전 페이지의 "complete" 상태를 돌려줄 수 있어, 새 페이지 로드를 기다리지 않고
+  바로 링크를 추출해버린다(간헐적으로만 재현되는 실제 버그였음). `chrome.tabs.onUpdated`
+  리스너는 반드시 네비게이션을 트리거하기 **전에** 붙일 것(`waitForTabComplete()` 참고)

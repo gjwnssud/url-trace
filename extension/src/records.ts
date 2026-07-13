@@ -108,3 +108,31 @@ export function hostnameOfPattern(pattern: string): string | null {
     return null;
   }
 }
+
+/** host:port (lowercased) of a URL, or "" if unparseable — used to keep the crawler on-site. */
+export function hostOf(rawURL: string): string {
+  try {
+    return new URL(rawURL).host.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Keeps only http(s) links and strips the fragment for the extension's
+ * crawler. Unlike the CLI's browser source (internal/source/browser.go),
+ * this does NOT treat SPA hash routes (#/path) as distinct pages — the
+ * extension's primary story for SPA screens is the human just navigating
+ * there while recording, so the auto-crawler stays simple and only follows
+ * genuinely distinct URLs.
+ */
+export function normalizeLink(href: string): string {
+  try {
+    const u = new URL(href);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return "";
+  }
+}

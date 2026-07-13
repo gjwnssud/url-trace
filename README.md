@@ -124,7 +124,14 @@ npm run build      # go build (GOOS=js GOARCH=wasm) + wasm_exec.js 복사 + esbu
 Result JSON/HAR/CSV 내보내기. Result JSON은 CLI의 `extract` 출력과 완전히 동일한
 스키마이므로 그대로 파이프 가능. 녹화 중 팝업·정책 검토 페이지 자신을 여닫아도 그
 페이지의 리소스 요청(`chrome-extension://...`)은 자동으로 캡처에서 제외된다 — 대상
-앱의 트래픽만 남는다:
+앱의 트래픽만 남는다.
+
+**자동 크롤 (선택)**: 팝업에서 "자동 크롤"을 체크하고 depth·최대 페이지를 지정하면,
+현재 탭 URL부터 같은 호스트 링크를 자동으로 따라간다(CLI의 `--depth`/`--max-pages`와
+같은 개념) — 단 별도 백그라운드 탭에서, **이미 로그인된 같은 브라우저 프로필의
+세션을 그대로 써서** 진행하므로 새 세션이 생기지 않고 중복 로그인 문제가 재발하지
+않는다. SPA 해시 라우트(`#/...`)는 CLI와 달리 따라가지 않는다 — 그런 화면은 그냥
+녹화 중에 직접 열어보면 캡처된다.
 
 ```sh
 url-trace export -i url-trace-result.json --min-confidence medium -o policy.json
@@ -242,9 +249,12 @@ url-trace/
 - **Phase 6** (완료): MIT 라이선스, GoReleaser 릴리즈 + GitHub Actions CI
 - **Phase 7** (진행 중): Chrome 확장 — Go 코어 WASM 재사용, `chrome.webRequest` 수동 캡처로
   인증/SPA/중복 로그인 문제 원천 해결. 캡처+extract 대응(MVP), 정책 export/diff 검토
-  페이지(`review.html`) 완료. 웹스토어 제출 준비 완료 — 개인정보 처리방침·리스팅 문안·
-  권한 점검·zip 패키징 스크립트·리스팅용 스크린샷(`store-assets/screenshots/`) 전부 준비됨.
-  남은 건 Chrome 웹스토어에 실제 제출(개발자 계정 필요, 사용자 직접 진행)뿐
+  페이지(`review.html`), 선택적 자동 크롤(같은 인증 세션 내 `tabs`+`scripting`으로
+  링크 자동 따라가기) 완료. 웹스토어 제출 준비 완료 — 개인정보 처리방침·리스팅 문안·
+  권한 점검·zip 패키징 스크립트·리스팅용 스크린샷(`store-assets/screenshots/`) 전부
+  준비됨. v0.1.0 제출 후 로컬 테스트로 실사용 버그 2건 발견·수정(신규 설치 시
+  webRequest 리스너 등록 실패, 크롤 탭 로드 대기 race condition) → v0.2.0. 남은 건
+  Chrome 웹스토어에 실제 제출(개발자 계정 필요, 사용자 직접 진행)뿐
 
 ## 라이선스
 
