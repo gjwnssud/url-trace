@@ -75,6 +75,14 @@ GOOS=js GOARCH=wasm go build -o /dev/null ./wasm
   host_permissions 범위와 무관하게 확장 자신의 리소스 요청은 항상 관찰시켜주므로, 이
   필터가 없으면 팝업/리뷰 페이지를 열기만 해도 그 페이지 자산 로드가 캡처에 섞인다
   (실제로 한 번 발견된 버그)
+- `chrome.webRequest.onBeforeRequest.addListener()`는 확장이 **현재 승인받은
+  host permission이 0개**면 예외를 던진다("You need to request host permissions
+  in the manifest file..."). `optional_host_permissions`만 선언(런타임에 도메인별
+  요청, 최소권한 원칙)하는 이 확장은 최초 설치 시 반드시 0개 상태이므로, 최상위에서
+  무조건 `addListener` 호출하면 안 된다 — `chrome.permissions.getAll()`(SW 재시작 시
+  기존 권한 복원)과 `chrome.permissions.onAdded`(런타임에 새로 승인될 때) 양쪽에서
+  `hasListener()`로 멱등하게 등록할 것(실제로 한 번 발견된 버그 — 실제 제출 후 로컬
+  테스트에서 발견됨)
 - 공식 Google Chrome(브랜드 빌드)은 `--load-extension`/`--disable-extensions-except`를
   무시한다("is not allowed in Google Chrome, ignoring") — `scripts/screenshots`처럼
   자동화로 확장을 로드해야 하면 Chromium(오픈소스 빌드)에 `CHROME_PATH`로 지정할 것

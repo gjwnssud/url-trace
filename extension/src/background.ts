@@ -44,21 +44,31 @@ function scheduleFlush(): void {
   }, 250);
 }
 
-// Registered synchronously during the service worker's top-level script
-// evaluation — an MV3 requirement, since listeners added later (e.g. inside
-// an async message handler) can silently fail to re-attach after the SW is
-// woken back up. The filter is intentionally "<all_urls>": webRequest only
-// actually delivers events for origins the extension currently holds a
-// granted permission for (requested per-target-domain from popup.ts), so
-// scoping happens via chrome.permissions, not this filter.
-chrome.webRequest.onBeforeRequest.addListener(
-  (details) => {
-    if (!recording || isOwnResourceURL(details.url)) return;
-    buffer.push({ url: details.url, timeStamp: details.timeStamp });
-    scheduleFlush();
-  },
-  { urls: ["<all_urls>"] }
-);
+function handleRequest(details: chrome.webRequest.WebRequestBodyDetails): void {
+  if (!recording || isOwnResourceURL(details.url)) return;
+  buffer.push({ url: details.url, timeStamp: details.timeStamp });
+  scheduleFlush();
+}
+
+// chrome.webRequest.onBeforeRequest.addListener() throws ("You need to
+// request host permissions...") unless the extension ALREADY holds at least
+// one granted host permission — which is never true on a fresh install,
+// since we deliberately ship with zero host_permissions and only request one
+// per-domain at runtime (popup.ts) for least privilege. So the listener
+// can't be registered unconditionally; it's registered once a permission
+// actually exists, and re-registered (idempotently) whenever a new one is
+// granted. Both calls below run synchronously during the service worker's
+// top-level script evaluation — the MV3 requirement is that registration is
+// not deferred into a later event callback (e.g. a message handler), not
+// that the promise inside must already be resolved.
+function registerCaptureListener(): void {
+  if (chrome.webRequest.onBeforeRequest.hasListener(handleRequest)) return;
+  chrome.webRequest.onBeforeRequest.addListener(handleRequest, { urls: ["<all_urls>"] });
+}
+chrome.permissions.getAll().then((perms) => {
+  if ((perms.origins ?? []).length > 0) registerCaptureListener();
+});
+chrome.permissions.onAdded.addListener(() => registerCaptureListener());
 
 type Request =
   | { type: "getStatus" }
