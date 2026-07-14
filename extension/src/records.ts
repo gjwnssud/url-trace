@@ -119,18 +119,19 @@ export function hostOf(rawURL: string): string {
 }
 
 /**
- * Keeps only http(s) links and strips the fragment for the extension's
- * crawler. Unlike the CLI's browser source (internal/source/browser.go),
- * this does NOT treat SPA hash routes (#/path) as distinct pages — the
- * extension's primary story for SPA screens is the human just navigating
- * there while recording, so the auto-crawler stays simple and only follows
- * genuinely distinct URLs.
+ * Keeps only http(s) links for the extension's crawler. This used to also
+ * strip the fragment, on the theory that SPA hash routes aren't "real" pages
+ * — but that broke crawling on dashboards whose side nav is hash-routed
+ * (e.g. /dashboard#/users): every nav link collapsed to the same string as
+ * the seed page's URL and got skipped as "already visited", so the crawler
+ * never left the seed page. The fragment is now preserved so distinct hash
+ * routes are queued as distinct pages (CLAUDE.md 재현율 우선 — silently
+ * dropping real navigation targets is exactly what this project forbids).
  */
 export function normalizeLink(href: string): string {
   try {
     const u = new URL(href);
     if (u.protocol !== "http:" && u.protocol !== "https:") return "";
-    u.hash = "";
     return u.toString();
   } catch {
     return "";

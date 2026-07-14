@@ -96,3 +96,21 @@ GOOS=js GOARCH=wasm go build -o /dev/null ./wasm
   아직 이전 페이지의 "complete" 상태를 돌려줄 수 있어, 새 페이지 로드를 기다리지 않고
   바로 링크를 추출해버린다(간헐적으로만 재현되는 실제 버그였음). `chrome.tabs.onUpdated`
   리스너는 반드시 네비게이션을 트리거하기 **전에** 붙일 것(`waitForTabComplete()` 참고)
+- `records.ts`의 `normalizeLink()`는 URL 프래그먼트(`#...`)를 보존해야 한다 — 예전엔
+  "SPA 해시 라우트는 진짜 페이지가 아니다"라는 판단으로 스트립했으나, 사이드 내비게이션이
+  해시 라우팅(`/dashboard#/users` 등)인 대상 앱에서는 모든 nav 링크가 seed URL과 같은
+  문자열로 뭉개져 `visited`에 이미 있다고 보고 전부 스킵됨 → 크롤이 시작 페이지 밖으로
+  전혀 못 나감(실제로 한 번 발견된 버그, 재현율 우선 원칙 위반). 같은 페이지 앵커
+  점프(`#section`)까지 별개 페이지로 취급하는 비용은 감수 — `maxPages`가 상한을 잡아준다
+- `background.ts`의 `extractLinks()`는 `allFrames: true` + open shadow root 재귀 순회로
+  링크를 모은다(iframe 안의 SNB, 웹 컴포넌트 기반 메뉴 대응) — closed shadow root는 주입
+  스크립트가 원천적으로 못 본다(플랫폼 제약, 우회 불가). 또한 SNB가 페이지 "complete"
+  이후 비동기로 렌더되는 경우가 있어 고정 지연(1200ms) 한 번으로는 못 잡을 수 있다 —
+  `waitForStableLinks()`가 연속 두 번 링크 수가 같아질 때까지(최대 8회, 500ms 간격) 폴링
+- 팝업(`popup.ts`)의 입력 상태(대상 도메인·자동 크롤 체크·depth·최대 페이지)는 전부
+  `chrome.storage.local`에 한 번에(`captureSettings`) 저장해야 한다 — MV3 팝업은 닫히면
+  DOM이 통째로 사라지므로, 저장하지 않은 컨트롤은 재오픈 시 항상 HTML의 초기값으로
+  돌아간다(과거엔 도메인 텍스트만 저장해 체크박스/숫자 입력이 매번 초기화되던 버그).
+  진행 중인 자동 크롤 여부처럼 background가 진실의 원천인 상태는 `chrome.storage`가
+  아니라 매초 `getStatus` 응답으로 반영할 것 — 저장된 폼 값과 실제 실행 상태가 다를 수
+  있다(예: 크롤 중 팝업을 열면 체크박스는 status.crawling을 따라야 한다)

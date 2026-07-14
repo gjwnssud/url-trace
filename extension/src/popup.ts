@@ -41,6 +41,13 @@ function setStatus(status: Status): void {
   countEl.textContent = `${status.count}건`;
   startBtn.disabled = status.recording;
   stopBtn.disabled = !status.recording;
+  // 실행 중인 크롤 상태를 background(진실의 원천)에서 반영 — 팝업을 껐다 켜도
+  // 체크박스가 항상 초기값(꺼짐)으로 돌아가던 문제의 일부 원인이었음.
+  if (status.recording) crawlEnabled.checked = status.crawling;
+  domainsInput.disabled = status.recording;
+  crawlEnabled.disabled = status.recording;
+  crawlDepth.disabled = status.recording;
+  crawlMaxPages.disabled = status.recording;
 }
 
 async function sendMessage<T>(message: unknown): Promise<T> {
@@ -52,12 +59,43 @@ async function refreshStatus(): Promise<void> {
   setStatus(res);
 }
 
-const STORAGE_KEY_PATTERNS = "domainPatterns";
+// Single settings blob (domains + crawl controls) so reopening the popup
+// restores the whole form, not just the domain text — previously only
+// domainsInput was persisted, so "자동 크롤" checkbox/depth/최대 페이지 always
+// reset to their HTML defaults on every popup open, even mid-recording.
+const STORAGE_KEY_SETTINGS = "captureSettings";
 
-async function restoreDomainsInput(): Promise<void> {
-  const { [STORAGE_KEY_PATTERNS]: saved } = await chrome.storage.local.get(STORAGE_KEY_PATTERNS);
-  if (typeof saved === "string") domainsInput.value = saved;
+interface SavedSettings {
+  domains: string;
+  crawlEnabled: boolean;
+  crawlDepth: number;
+  crawlMaxPages: number;
 }
+
+async function restoreSettings(): Promise<void> {
+  const { [STORAGE_KEY_SETTINGS]: saved } = await chrome.storage.local.get(STORAGE_KEY_SETTINGS);
+  const s = saved as Partial<SavedSettings> | undefined;
+  if (!s) return;
+  if (typeof s.domains === "string") domainsInput.value = s.domains;
+  if (typeof s.crawlEnabled === "boolean") crawlEnabled.checked = s.crawlEnabled;
+  if (typeof s.crawlDepth === "number") crawlDepth.value = String(s.crawlDepth);
+  if (typeof s.crawlMaxPages === "number") crawlMaxPages.value = String(s.crawlMaxPages);
+}
+
+function saveSettings(): void {
+  const settings: SavedSettings = {
+    domains: domainsInput.value,
+    crawlEnabled: crawlEnabled.checked,
+    crawlDepth: Number(crawlDepth.value) || 0,
+    crawlMaxPages: Number(crawlMaxPages.value) || 50,
+  };
+  void chrome.storage.local.set({ [STORAGE_KEY_SETTINGS]: settings });
+}
+
+domainsInput.addEventListener("change", saveSettings);
+crawlEnabled.addEventListener("change", saveSettings);
+crawlDepth.addEventListener("change", saveSettings);
+crawlMaxPages.addEventListener("change", saveSettings);
 
 startBtn.addEventListener("click", () => {
   // chrome.permissions.request must be called synchronously within the
@@ -79,7 +117,7 @@ startBtn.addEventListener("click", () => {
       setMessage(`권한 요청 실패: ${String(err)}`);
       return;
     }
-    await chrome.storage.local.set({ [STORAGE_KEY_PATTERNS]: domainsInput.value });
+    saveSettings();
 
     if (crawlEnabled.checked) {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -183,6 +221,6 @@ reviewLink.addEventListener("click", (e) => {
   void chrome.tabs.create({ url: chrome.runtime.getURL("review.html") });
 });
 
-void restoreDomainsInput();
+void restoreSettings();
 void refreshStatus();
 setInterval(() => void refreshStatus(), 1000);

@@ -125,12 +125,47 @@ function settleAfterLoad(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 1200));
 }
 
+// allFrames covers side-nav/menu content rendered inside an <iframe>; the
+// recursive shadowRoot walk covers web-component menus (open shadow roots
+// only — closed shadow roots are unobservable from injected scripts, a
+// platform limitation, not a bug here). Frames the script couldn't reach
+// (cross-origin without a granted host permission) are simply absent from
+// `results`, not an error.
 async function extractLinks(tabId: number): Promise<string[]> {
   const results = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => Array.from(document.querySelectorAll("a[href]")).map((a) => (a as HTMLAnchorElement).href),
+    target: { tabId, allFrames: true },
+    func: () => {
+      function collect(root: Document | ShadowRoot): string[] {
+        const hrefs = Array.from(root.querySelectorAll("a[href]")).map((a) => (a as HTMLAnchorElement).href);
+        for (const el of Array.from(root.querySelectorAll("*"))) {
+          if (el.shadowRoot) hrefs.push(...collect(el.shadowRoot));
+        }
+        return hrefs;
+      }
+      return collect(document);
+    },
   });
-  return results[0]?.result ?? [];
+  return results.flatMap((r) => r.result ?? []);
+}
+
+// Side nav content in dashboards is frequently rendered by an async fetch
+// AFTER the page reaches "complete", so a single fixed-delay extraction can
+// run before it exists yet. Poll until two consecutive reads return the same
+// link count, instead of trusting one fixed wait.
+async function waitForStableLinks(tabId: number): Promise<string[]> {
+  const maxRounds = 8;
+  const intervalMs = 500;
+  let previous = await extractLinks(tabId).catch((err: unknown) => {
+    console.error("url-trace: link extraction failed on tab", tabId, err);
+    return [];
+  });
+  for (let round = 0; round < maxRounds; round++) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    const next = await extractLinks(tabId).catch(() => previous);
+    if (next.length === previous.length) return next;
+    previous = next;
+  }
+  return previous;
 }
 
 async function runCrawl(rawSeedURL: string, depth: number, maxPages: number): Promise<void> {
@@ -171,16 +206,20 @@ async function runCrawl(rawSeedURL: string, depth: number, maxPages: number): Pr
       crawlPagesVisited++;
 
       if (item.depth < depth) {
-        const links = await extractLinks(tabId).catch((err: unknown) => {
-          console.error("url-trace: link extraction failed on", item.url, err);
-          return [];
-        });
+        const links = await waitForStableLinks(tabId);
+        let queued = 0;
         for (const href of links) {
           const clean = normalizeLink(href);
           if (!clean || visited.has(clean) || hostOf(clean) !== seedHost) continue;
           visited.add(clean);
           queue.push({ url: clean, depth: item.depth + 1 });
+          queued++;
         }
+        // 무음 탈락 금지: 왜 나머지가 큐에 안 들어갔는지(이미 방문·다른 호스트·
+        // http(s) 아님) 콘솔에서 확인할 수 있게 항상 남긴다.
+        console.debug(
+          `url-trace: ${item.url} → 링크 ${links.length}개 발견, 신규 ${queued}개 큐 추가`
+        );
       }
     }
   } finally {

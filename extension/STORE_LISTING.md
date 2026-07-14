@@ -124,6 +124,11 @@ https://github.com/gjwnssud/url-trace/blob/main/extension/PRIVACY.md
 받는다 — 위 justification 표 참고. `chrome.tabs.create`(팝업→리뷰 페이지 이동)는
 자체 확장 페이지 URL을 여는 것뿐이라 `tabs` 권한과 무관.
 
+**v0.2.1 갱신**: 권한 변경 없음(버그 수정만) — 재심사 대상 아님. 자동 크롤 실사용
+중 발견된 버그 3건: 팝업 폼 상태 미저장, 해시 라우팅 사이드 내비게이션에서 크롤이
+시작 페이지 밖으로 못 나감, iframe/웹 컴포넌트 메뉴 링크 미인식. 세부는 README
+로드맵 참고.
+
 ## 스크린샷 (완료 — extension/store-assets/screenshots/)
 
 1. `1-popup.png` — 팝업: 대상 도메인 입력 + 녹화 중 상태 + 캡처 건수
