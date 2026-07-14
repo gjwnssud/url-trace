@@ -119,19 +119,25 @@ export function hostOf(rawURL: string): string {
 }
 
 /**
- * Keeps only http(s) links for the extension's crawler. This used to also
- * strip the fragment, on the theory that SPA hash routes aren't "real" pages
- * — but that broke crawling on dashboards whose side nav is hash-routed
- * (e.g. /dashboard#/users): every nav link collapsed to the same string as
- * the seed page's URL and got skipped as "already visited", so the crawler
- * never left the seed page. The fragment is now preserved so distinct hash
- * routes are queued as distinct pages (CLAUDE.md 재현율 우선 — silently
- * dropping real navigation targets is exactly what this project forbids).
+ * Keeps only http(s) links for the extension's crawler, and matches
+ * internal/source/browser.go's normalizeLink() exactly: SPA route fragments
+ * (#/path, #!/path) are preserved as distinct pages, but a plain in-page
+ * anchor (#section) has its fragment dropped so it dedupes to the page it
+ * points within. Blindly stripping every fragment used to break crawling on
+ * dashboards whose side nav is hash-routed (e.g. /dashboard#/users) — every
+ * nav link collapsed to the same string as the seed page's URL and got
+ * skipped as "already visited", so the crawler never left the seed page
+ * (CLAUDE.md 재현율 우선 — silently dropping real navigation targets is
+ * exactly what this project forbids).
  */
 export function normalizeLink(href: string): string {
   try {
     const u = new URL(href);
     if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+    const fragment = u.hash.slice(1); // drop the leading '#'
+    if (fragment !== "" && !fragment.startsWith("/") && !fragment.startsWith("!")) {
+      u.hash = "";
+    }
     return u.toString();
   } catch {
     return "";

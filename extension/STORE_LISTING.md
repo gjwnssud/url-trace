@@ -129,6 +129,11 @@ https://github.com/gjwnssud/url-trace/blob/main/extension/PRIVACY.md
 시작 페이지 밖으로 못 나감, iframe/웹 컴포넌트 메뉴 링크 미인식. 세부는 README
 로드맵 참고.
 
+**v0.2.2 갱신**: 권한 변경 없음. CLI(`internal/source/browser.go`)와 크롤 로직을
+서로 맞춤 — 해시 프래그먼트 처리를 CLI와 동일한 휴리스틱(SPA 라우트만 보존, 순수
+인앵커는 제거)으로 정교화. iframe/shadow DOM 인식과 링크 안정화 대기는 반대로
+CLI 쪽에 포팅함.
+
 ## 스크린샷 (완료 — extension/store-assets/screenshots/)
 
 1. `1-popup.png` — 팝업: 대상 도메인 입력 + 녹화 중 상태 + 캡처 건수

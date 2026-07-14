@@ -268,19 +268,14 @@ func (s *BrowserSource) crawl(ctx context.Context) error {
 		}
 		pages++
 
-		var hrefs []string
-		actions := []chromedp.Action{
+		if err := chromedp.Run(ctx,
 			// Bounce through about:blank so navigating to a URL that differs
 			// only by a hash route still triggers a full load — otherwise a
 			// same-document hash change fires no load event and Navigate hangs.
 			chromedp.Navigate("about:blank"),
 			chromedp.Navigate(cur.url),
 			chromedp.Sleep(s.Wait),
-		}
-		if cur.depth < s.Depth {
-			actions = append(actions, chromedp.Evaluate(linkExtractJS, &hrefs))
-		}
-		if err := chromedp.Run(ctx, actions...); err != nil {
+		); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				return err // stop the whole crawl; caller keeps captured records
 			}
@@ -288,6 +283,19 @@ func (s *BrowserSource) crawl(ctx context.Context) error {
 			// crawl — note it and move on.
 			fmt.Fprintf(os.Stderr, "browser capture of %s failed: %v\n", cur.url, err)
 			continue
+		}
+
+		var hrefs []string
+		if cur.depth < s.Depth {
+			var err error
+			hrefs, err = waitForStableLinks(ctx)
+			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+					return err
+				}
+				fmt.Fprintf(os.Stderr, "browser capture of %s: link extraction failed: %v\n", cur.url, err)
+				// hrefs may already hold a best-effort partial result — keep going with it.
+			}
 		}
 
 		for _, href := range hrefs {
@@ -307,8 +315,58 @@ type crawlItem struct {
 	depth int
 }
 
-// linkExtractJS returns every anchor's resolved absolute href.
-const linkExtractJS = `Array.from(document.querySelectorAll('a[href]')).map(a => a.href)`
+// waitForStableLinks polls linkExtractJS until two consecutive reads return
+// the same link count (or maxRounds is hit), instead of trusting the single
+// fixed Wait already slept before this is called. Side-nav/menu content in
+// dashboards is frequently rendered by an async fetch that lands after the
+// page settles, so one fixed-delay read can run before it exists yet. On a
+// mid-poll error it returns the best-effort partial result gathered so far,
+// never an empty slice discarded for nothing (재현율 우선).
+func waitForStableLinks(ctx context.Context) ([]string, error) {
+	const maxRounds = 8
+	const interval = 500 * time.Millisecond
+
+	var previous []string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(linkExtractJS, &previous)); err != nil {
+		return nil, err
+	}
+	for round := 0; round < maxRounds; round++ {
+		select {
+		case <-time.After(interval):
+		case <-ctx.Done():
+			return previous, ctx.Err()
+		}
+		var next []string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(linkExtractJS, &next)); err != nil {
+			return previous, err
+		}
+		if len(next) == len(previous) {
+			return next, nil
+		}
+		previous = next
+	}
+	return previous, nil
+}
+
+// linkExtractJS returns every anchor's resolved absolute href, recursing into
+// open shadow roots (web-component menus) and same-origin iframes (a
+// cross-origin iframe's contentDocument throws and is simply skipped — this
+// JS context cannot reach it, the same limitation the extension has for
+// frames it lacks host permission for).
+const linkExtractJS = `(function collect(doc) {
+	var hrefs = Array.from(doc.querySelectorAll('a[href]')).map(function (a) { return a.href; });
+	Array.from(doc.querySelectorAll('*')).forEach(function (el) {
+		if (el.shadowRoot) hrefs = hrefs.concat(collect(el.shadowRoot));
+	});
+	Array.from(doc.querySelectorAll('iframe')).forEach(function (frame) {
+		try {
+			if (frame.contentDocument) hrefs = hrefs.concat(collect(frame.contentDocument));
+		} catch (e) {
+			// cross-origin iframe — inaccessible from this JS context.
+		}
+	});
+	return hrefs;
+})(document)`
 
 // normalizeLink keeps only http(s) links. SPA hash routes (#/path, #!/path) are
 // preserved as distinct pages; plain in-page anchors (#section), which do not

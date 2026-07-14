@@ -96,17 +96,25 @@ GOOS=js GOARCH=wasm go build -o /dev/null ./wasm
   아직 이전 페이지의 "complete" 상태를 돌려줄 수 있어, 새 페이지 로드를 기다리지 않고
   바로 링크를 추출해버린다(간헐적으로만 재현되는 실제 버그였음). `chrome.tabs.onUpdated`
   리스너는 반드시 네비게이션을 트리거하기 **전에** 붙일 것(`waitForTabComplete()` 참고)
-- `records.ts`의 `normalizeLink()`는 URL 프래그먼트(`#...`)를 보존해야 한다 — 예전엔
-  "SPA 해시 라우트는 진짜 페이지가 아니다"라는 판단으로 스트립했으나, 사이드 내비게이션이
-  해시 라우팅(`/dashboard#/users` 등)인 대상 앱에서는 모든 nav 링크가 seed URL과 같은
-  문자열로 뭉개져 `visited`에 이미 있다고 보고 전부 스킵됨 → 크롤이 시작 페이지 밖으로
-  전혀 못 나감(실제로 한 번 발견된 버그, 재현율 우선 원칙 위반). 같은 페이지 앵커
-  점프(`#section`)까지 별개 페이지로 취급하는 비용은 감수 — `maxPages`가 상한을 잡아준다
-- `background.ts`의 `extractLinks()`는 `allFrames: true` + open shadow root 재귀 순회로
-  링크를 모은다(iframe 안의 SNB, 웹 컴포넌트 기반 메뉴 대응) — closed shadow root는 주입
-  스크립트가 원천적으로 못 본다(플랫폼 제약, 우회 불가). 또한 SNB가 페이지 "complete"
-  이후 비동기로 렌더되는 경우가 있어 고정 지연(1200ms) 한 번으로는 못 잡을 수 있다 —
-  `waitForStableLinks()`가 연속 두 번 링크 수가 같아질 때까지(최대 8회, 500ms 간격) 폴링
+- `records.ts`의 `normalizeLink()`는 `internal/source/browser.go`의 동명 함수와 정확히
+  같은 휴리스틱이어야 한다: SPA 라우트 프래그먼트(`#/path`, `#!/path`)는 보존하고, 순수
+  인앵커(`#section`)만 스트립. 한때 확장 쪽에서 프래그먼트를 무조건 스트립했다가(사이드
+  내비게이션이 해시 라우팅인 앱에서 모든 nav 링크가 seed URL과 같은 문자열로 뭉개져
+  `visited`에 이미 있다고 보고 전부 스킵 → 크롤이 시작 페이지 밖으로 못 나감, 재현율
+  우선 원칙 위반), 그다음엔 무조건 보존으로 고쳤다가(CLI보다 거칠어짐 — 인앵커까지
+  별개 페이지로 취급) 결국 CLI와 동일한 휴리스틱으로 맞춤. 둘 중 하나만 고치면 크롤
+  결과가 CLI/확장 사이에서 갈린다
+- 링크 추출은 CLI(`browser.go`의 `linkExtractJS`)와 확장(`background.ts`의
+  `extractLinks()`) 양쪽 다 iframe(같은 출처만 — cross-origin은 원천적으로 접근 불가)과
+  open shadow root(웹 컴포넌트 메뉴)를 재귀 순회하고, 페이지 "complete" 이후 비동기로
+  늦게 뜨는 사이드 메뉴에 대응해 링크 수가 연속 두 번 같아질 때까지 폴링한다
+  (`waitForStableLinks()` — 최대 8회, 500ms 간격, CLI는 `chromedp.Run` 반복, 확장은
+  `chrome.scripting.executeScript` 반복). closed shadow root는 둘 다 원천적으로 못 본다
+  (플랫폼 제약, 우회 불가)
+- **CLI의 크롤러(`browser.go`)와 확장의 크롤러(`background.ts`)는 서로 별개 구현**이라
+  한쪽에 크롤 관련 개선/버그 수정을 넣으면 다른 쪽엔 자동으로 반영되지 않는다(공유하는
+  건 `internal/{pipeline,classify,patterns,policy,sqlexport}`뿐 — 캡처 계층은 각자
+  소유). 크롤 로직을 고칠 때는 반드시 다른 쪽도 대조해서 같이 맞출 것
 - 팝업(`popup.ts`)의 입력 상태(대상 도메인·자동 크롤 체크·depth·최대 페이지)는 전부
   `chrome.storage.local`에 한 번에(`captureSettings`) 저장해야 한다 — MV3 팝업은 닫히면
   DOM이 통째로 사라지므로, 저장하지 않은 컨트롤은 재오픈 시 항상 HTML의 초기값으로
