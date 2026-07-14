@@ -134,6 +134,10 @@ https://github.com/gjwnssud/url-trace/blob/main/extension/PRIVACY.md
 인앵커는 제거)으로 정교화. iframe/shadow DOM 인식과 링크 안정화 대기는 반대로
 CLI 쪽에 포팅함.
 
+**v0.2.3 갱신**: 권한 변경 없음. 크롤이 자연 종료돼도 팝업이 그냥 "녹화 중"만 보여줘
+사용자가 완료 여부를 알 수 없던 문제를 발견해 수정 — `crawlCompleted` 상태를 추가해
+"크롤 완료(N페이지) · 녹화 중"으로 구분 표시(녹화 자체는 의도적으로 계속 켜둠).
+
 ## 스크린샷 (완료 — extension/store-assets/screenshots/)
 
 1. `1-popup.png` — 팝업: 대상 도메인 입력 + 녹화 중 상태 + 캡처 건수

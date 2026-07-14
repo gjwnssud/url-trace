@@ -88,6 +88,14 @@ let crawling = false;
 let crawlPagesVisited = 0;
 let crawlMaxPages = 0;
 let crawlCancelRequested = false;
+// True once a crawl has run to completion (queue exhausted, maxPages hit, or
+// stopped) while recording is still on, so the popup can show "크롤 완료"
+// instead of silently falling back to the same generic "녹화 중" text a plain
+// manual recording shows — recording itself deliberately stays on after a
+// crawl finishes (the user may still want to click around manually and keep
+// capturing). Reset whenever a *new* recording session starts (plain start
+// or a fresh crawl) so it doesn't linger as stale info from a prior crawl.
+let crawlCompleted = false;
 
 // waitForTabComplete resolves once tabId reaches "complete". The listener is
 // attached BEFORE returning, so callers that are about to trigger a
@@ -174,6 +182,7 @@ async function runCrawl(rawSeedURL: string, depth: number, maxPages: number): Pr
   crawlPagesVisited = 0;
   crawlMaxPages = maxPages;
   crawlCancelRequested = false;
+  crawlCompleted = false;
 
   // Canonicalize the seed the same way normalizeLink() canonicalizes every
   // discovered link (e.g. new URL("http://h:1").toString() === "http://h:1/")
@@ -225,6 +234,7 @@ async function runCrawl(rawSeedURL: string, depth: number, maxPages: number): Pr
   } finally {
     await chrome.tabs.remove(tabId).catch(() => {});
     crawling = false;
+    crawlCompleted = true;
   }
 }
 
@@ -237,31 +247,43 @@ type Request =
   | { type: "crawl"; seedURL: string; depth: number; maxPages: number };
 
 type Response =
-  | { recording: boolean; count: number; crawling: boolean; pagesVisited: number; maxPages: number }
+  | { recording: boolean; count: number; crawling: boolean; pagesVisited: number; maxPages: number; crawlCompleted: boolean }
   | { captured: CapturedRequest[] };
+
+function statusResponse(overrides: Partial<{ crawling: boolean; pagesVisited: number; maxPages: number }> = {}): Response {
+  return {
+    recording,
+    count: buffer.length,
+    crawling: overrides.crawling ?? crawling,
+    pagesVisited: overrides.pagesVisited ?? crawlPagesVisited,
+    maxPages: overrides.maxPages ?? crawlMaxPages,
+    crawlCompleted,
+  };
+}
 
 chrome.runtime.onMessage.addListener((message: Request, _sender, sendResponse: (r: Response) => void) => {
   void (async () => {
     await restored;
     switch (message.type) {
       case "getStatus":
-        sendResponse({ recording, count: buffer.length, crawling, pagesVisited: crawlPagesVisited, maxPages: crawlMaxPages });
+        sendResponse(statusResponse());
         return;
       case "start":
         recording = true;
+        crawlCompleted = false;
         await chrome.storage.session.set({ recording: true });
-        sendResponse({ recording, count: buffer.length, crawling, pagesVisited: crawlPagesVisited, maxPages: crawlMaxPages });
+        sendResponse(statusResponse());
         return;
       case "stop":
         recording = false;
         crawlCancelRequested = true;
         await chrome.storage.session.set({ recording: false });
-        sendResponse({ recording, count: buffer.length, crawling, pagesVisited: crawlPagesVisited, maxPages: crawlMaxPages });
+        sendResponse(statusResponse());
         return;
       case "clear":
         buffer = [];
         await chrome.storage.session.set({ captured: buffer });
-        sendResponse({ recording, count: buffer.length, crawling, pagesVisited: crawlPagesVisited, maxPages: crawlMaxPages });
+        sendResponse(statusResponse());
         return;
       case "export":
         sendResponse({ captured: buffer });
@@ -272,7 +294,7 @@ chrome.runtime.onMessage.addListener((message: Request, _sender, sendResponse: (
         void runCrawl(message.seedURL, message.depth, message.maxPages).catch((err: unknown) => {
           console.error("url-trace: crawl failed", err);
         });
-        sendResponse({ recording, count: buffer.length, crawling: true, pagesVisited: 0, maxPages: message.maxPages });
+        sendResponse(statusResponse({ crawling: true, pagesVisited: 0, maxPages: message.maxPages }));
         return;
     }
   })();

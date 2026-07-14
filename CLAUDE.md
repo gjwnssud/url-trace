@@ -122,3 +122,11 @@ GOOS=js GOARCH=wasm go build -o /dev/null ./wasm
   진행 중인 자동 크롤 여부처럼 background가 진실의 원천인 상태는 `chrome.storage`가
   아니라 매초 `getStatus` 응답으로 반영할 것 — 저장된 폼 값과 실제 실행 상태가 다를 수
   있다(예: 크롤 중 팝업을 열면 체크박스는 status.crawling을 따라야 한다)
+- `background.ts`의 `runCrawl()`은 `finally`에서 `crawling`만 끄고 `recording`은 끄지
+  않는다 — 크롤이 자연 종료(큐 소진·maxPages 도달)돼도 녹화는 계속 두는 게 의도된
+  설계(사용자가 이어서 수동으로 몇 군데 더 눌러볼 수 있음). 대신 `crawlCompleted`
+  플래그로 "크롤 완료" 상태를 별도 표시해야 한다 — 이게 없으면 크롤이 끝난 뒤에도
+  팝업이 그냥 "녹화 중"만 보여줘서 사용자가 크롤이 끝났는지 계속 도는지 구분 못 함
+  (실제로 한 번 발견된 버그). `crawlCompleted`는 새 녹화 세션이 시작될 때(`"start"`
+  또는 `"crawl"` 메시지) 반드시 리셋할 것 — 안 그러면 이전 크롤의 "완료" 표시가 무관한
+  다음 세션에 그대로 남는다

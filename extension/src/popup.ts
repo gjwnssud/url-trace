@@ -25,6 +25,7 @@ interface Status {
   crawling: boolean;
   pagesVisited: number;
   maxPages: number;
+  crawlCompleted: boolean;
 }
 
 function setMessage(text: string, kind: "error" | "info" = "error"): void {
@@ -36,7 +37,9 @@ function setStatus(status: Status): void {
   statusText.textContent = status.crawling
     ? `녹화 중 · 크롤 ${status.pagesVisited}/${status.maxPages}`
     : status.recording
-      ? "녹화 중"
+      ? status.crawlCompleted
+        ? `크롤 완료(${status.pagesVisited}p) · 녹화 중`
+        : "녹화 중"
       : "대기 중";
   countEl.textContent = `${status.count}건`;
   startBtn.disabled = status.recording;
