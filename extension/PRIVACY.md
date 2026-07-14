@@ -61,6 +61,8 @@ building an allowlist/whitelist policy.
 | `storage` | Hold the in-progress capture buffer and your saved domain-pattern preference, locally. |
 | `downloads` | Let you save Result JSON / HAR / CSV / policy.json / SQL export files you generate. |
 | `optional_host_permissions` (`<all_urls>`, requested at runtime) | The extension has no host access by default. When you click "녹화 시작", it requests `<all_urls>` via Chrome's own permission-grant UI so it can capture every domain the app you're recording depends on (see "What the extension observes" above for why). You can revoke this at any time from `chrome://extensions`. |
+| `tabs` | Used only by the optional "자동 크롤" (auto-crawl) feature: opens one background tab and reads/navigates its URL, restricted to the same host as the page the crawl started from. Never used outside an active crawl. |
+| `scripting` | Used only by the optional auto-crawl feature to read link URLs from the current page inside that background crawl tab (including same-origin iframes and open shadow roots), so it knows which same-host pages to visit next. No script is ever injected into any other tab. |
 
 ## Third parties
 
