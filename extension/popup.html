@@ -52,9 +52,13 @@
     <h1>url-trace Capture</h1>
     <p class="tagline">앱을 평소처럼 사용하는 동안 실제 요청을 관찰합니다. 쿠키 주입·중복 로그인 없음.</p>
 
-    <label for="domains">대상 도메인 (쉼표로 구분)</label>
+    <label for="domains">내 서비스 도메인 (선택, 쉼표로 구분)</label>
     <input id="domains" type="text" placeholder="https://app.example.com/*, app2.example.com" />
-    <p class="hint">전체 URL 패턴 또는 맨 도메인만 입력해도 됩니다.</p>
+    <p class="hint">
+      캡처 범위를 제한하지 않습니다 — "녹화 시작"을 누르면 모든 요청을 관찰할 수 있는
+      권한을 요청해, 대상 앱이 의존하는 서드파티(CDN·인증·애널리틱스)까지 빠짐없이
+      잡습니다. 여기 입력한 도메인은 내보내기 시 1st/3rd-party 구분에만 쓰입니다.
+    </p>
 
     <div class="crawl-row">
       <label class="inline" for="crawlEnabled"><input type="checkbox" id="crawlEnabled" /> 자동 크롤</label>

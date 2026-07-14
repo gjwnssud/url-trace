@@ -61,8 +61,8 @@ url-trace CLI와 완전히 동일한 코드입니다. 데이터가 브라우저 
 ## Single purpose description (필수 입력란)
 
 ```
-Observes the network requests a web app makes (only for domains the user
-explicitly grants), and turns them into an audit-friendly URL list for
+Observes the network requests a web app makes, once the user grants host
+access by clicking start, and turns them into an audit-friendly URL list for
 building a URL allowlist/whitelist policy.
 ```
 
@@ -78,12 +78,12 @@ building a URL allowlist/whitelist policy.
 
 | 권한 | 정당화 문구 |
 |------|------------|
-| `webRequest` | "Observes request URLs (not bodies/headers/cookies) on domains the user explicitly starts recording for, to build a URL allowlist candidate list. No requests are blocked or modified." |
+| `webRequest` | "Observes request URLs (not bodies/headers/cookies) once the user grants host access by clicking start, to build a complete URL allowlist candidate list — including third-party CDN/auth/analytics domains the target app depends on, which a hostname-scoped capture would silently miss. No requests are blocked or modified." |
 | `storage` | "Holds the in-progress capture buffer and the user's saved domain-pattern text locally, so recording survives the service worker's normal suspend/resume cycle." |
 | `downloads` | "Lets the user save the Result JSON / HAR / CSV / policy.json / SQL files they generate to their own device." |
-| `optional_host_permissions` (`<all_urls>`, 런타임 요청) | "No host access is granted by default. The extension requests permission only for the exact domain pattern(s) the user types in before recording starts, via Chrome's own permission prompt. Users can revoke at any time from chrome://extensions." |
-| `tabs` | "Used only by the optional auto-crawl feature: opens one background tab to follow same-host links (within the domain the user already granted) and navigates it, reusing the user's existing signed-in session rather than creating a new one." |
-| `scripting` | "Used only by the optional auto-crawl feature to read the current page's link URLs (document.querySelectorAll('a[href]')) inside the background crawl tab, so it knows which same-host pages to visit next. No script is injected into any other tab." |
+| `optional_host_permissions` (`<all_urls>`, 런타임 요청) | "No host access is granted by default. The extension requests <all_urls> only when the user clicks start, via Chrome's own permission prompt — broad access is needed because a firewall allowlist is only safe if it includes every domain the app depends on, not just the one the user thinks to type in. Users can revoke at any time from chrome://extensions." |
+| `tabs` | "Used only by the optional auto-crawl feature: opens one background tab and navigates it only to links on the same host as the page the crawl started from (never to other domains, regardless of host permission scope), reusing the user's existing signed-in session rather than creating a new one." |
+| `scripting` | "Used only by the optional auto-crawl feature to read the current page's link URLs (document.querySelectorAll('a[href]'), including same-origin iframes and open shadow roots) inside the background crawl tab, so it knows which same-host pages to visit next. No script is injected into any other tab." |
 
 ## 데이터 사용 공개 (Data usage 탭 체크박스)
 
@@ -103,8 +103,8 @@ building a URL allowlist/whitelist policy.
 체크박스는 통상 브라우징 기록을 수집·전송하는 확장에 해당하는 것으로, 로컬
 처리만 하고 전송하지 않는 이 확장에는 해당하지 않는다(단, 정책 상 애매하면 폼의
 문구를 다시 확인해 보수적으로 표시할 것 — 최종 판단은 제출자 책임). `tabs` 권한도
-동일한 원칙 — 크롤 중에만, 사용자가 이미 승인한 도메인 범위 안에서만 탭 URL을
-읽고 이동시키며, 그 데이터도 서버로 전송되지 않는다.
+동일한 원칙 — 크롤 중에만, 크롤 시작점과 같은 호스트 범위 안에서만(호스트 권한
+범위 전체가 아니라) 탭 URL을 읽고 이동시키며, 그 데이터도 서버로 전송되지 않는다.
 
 ## 개인정보 처리방침 URL
 
@@ -137,6 +137,19 @@ CLI 쪽에 포팅함.
 **v0.2.3 갱신**: 권한 변경 없음. 크롤이 자연 종료돼도 팝업이 그냥 "녹화 중"만 보여줘
 사용자가 완료 여부를 알 수 없던 문제를 발견해 수정 — `crawlCompleted` 상태를 추가해
 "크롤 완료(N페이지) · 녹화 중"으로 구분 표시(녹화 자체는 의도적으로 계속 켜둠).
+
+**v0.3.0 갱신**: 선언된 권한 목록(`manifest.json`)은 그대로(`optional_host_permissions`에
+`<all_urls>`가 이미 있었음) — 하지만 **런타임에 실제로 요청하는 범위가 바뀌었다**:
+이전엔 "대상 도메인" 입력 패턴만 요청했는데, 이제는 "녹화 시작"을 누르면 항상
+`<all_urls>` 전체를 요청한다. 화이트리스트가 안전하려면 대상 앱이 의존하는 서드파티
+(CDN·인증·애널리틱스) 도메인까지 빠짐없이 잡아야 하는데, 사용자가 입력한 도메인으로
+캡처를 제한하면 정작 그런 서드파티가 조용히 빠지기 때문(CLAUDE.md 재현율 우선 원칙).
+"내 서비스 도메인" 입력 필드는 이제 캡처 범위가 아니라 1st/3rd-party 라벨링에만 쓰인다.
+반면 자동 크롤의 **탐색 범위(어디로 자동 이동할지)는 그대로 시작점과 같은 호스트로
+제한** — 이건 그대로 유지. 매니페스트에 새 권한 타입이 추가된 게 아니라 기존
+`optional_host_permissions`를 더 넓게 요청하는 것뿐이지만, 실제 요청 범위가 크게
+바뀐 만큼 재제출 시 위 justification 문구(특히 `optional_host_permissions`/`webRequest`
+행)를 다시 확인해서 반영할 것.
 
 ## 스크린샷 (완료 — extension/store-assets/screenshots/)
 

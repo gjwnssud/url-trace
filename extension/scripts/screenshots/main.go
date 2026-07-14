@@ -9,11 +9,13 @@
 // and review page with realistic data without hitting Chrome's native
 // "allow this site?" permission bubble (which isn't a page-DOM element
 // chromedp can drive), it copies the built extension into a temp directory
-// and adds a mandatory host_permissions entry scoped to a local test server
-// there. Unpacked/dev-mode extensions with declared host_permissions are
-// auto-granted, no prompt — so chrome.permissions.request() in popup.ts
-// simply resolves true instantly, exercising the real code path with no
-// synthetic backdoor added to the shipped extension.
+// and adds a mandatory host_permissions entry there matching exactly what
+// popup.ts requests at runtime (<all_urls> — see CLAUDE.md/STORE_LISTING.md
+// on why capture isn't scoped to a single domain). Unpacked/dev-mode
+// extensions with declared host_permissions are auto-granted, no prompt —
+// so chrome.permissions.request() in popup.ts simply resolves true
+// instantly, exercising the real code path with no synthetic backdoor added
+// to the shipped extension.
 //
 // IMPORTANT: official Google Chrome (the branded build) silently ignores
 // --load-extension/--disable-extensions-except — it logs "...is not allowed
@@ -96,7 +98,13 @@ func main() {
 		fmt.Println("keeping temp extension dir:", tmpExtDir)
 	}
 
-	if err := stageExtension(extDir, tmpExtDir, srv.URL+"/*"); err != nil {
+	// popup.ts now always requests <all_urls> on start (v0.3.0 — capture is no
+	// longer scoped to the typed domain, see CLAUDE.md), so the staged
+	// manifest must statically grant exactly that, not just the test
+	// server's origin — otherwise chrome.permissions.request() would need to
+	// prompt for a broader permission than what's statically granted, and
+	// that native dialog isn't a page-DOM element chromedp can drive.
+	if err := stageExtension(extDir, tmpExtDir, "<all_urls>"); err != nil {
 		log.Fatalf("staging extension copy: %v", err)
 	}
 

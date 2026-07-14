@@ -1,6 +1,6 @@
 # Privacy Policy — url-trace Capture
 
-_Last updated: 2026-07-13_
+_Last updated: 2026-07-14_
 
 ## Summary
 
@@ -11,19 +11,32 @@ a "download" button to save a file to your own disk.
 
 ## What the extension observes
 
-When you turn recording on for a domain you specify, the extension watches
-the network requests your browser makes to that domain (via the
-`webRequest` API) and records each request's URL and timestamp. This is the
-extension's entire purpose: turning your own real usage of an application
-into a list of URLs for building an allowlist/whitelist policy.
+When you click "녹화 시작" (Start recording), the extension watches the
+network requests your browser makes (via the `webRequest` API) and records
+each request's URL and timestamp. This is the extension's entire purpose:
+turning your own real usage of an application into a list of URLs for
+building an allowlist/whitelist policy.
 
 - Recording is **off by default** and only starts when you explicitly click
-  "녹화 시작" (Start recording) in the popup.
-- The extension only ever requests browser permission for the specific
-  domain(s) you type in — it does not hold blanket access to all sites by
-  default (see "Permissions" below).
+  "녹화 시작" in the popup.
+- Starting recording requests permission to observe requests on **all
+  sites** (`<all_urls>`), not just the domain(s) you type in the "내 서비스
+  도메인" field — a firewall allowlist is only safe if it includes every
+  domain the application actually depends on, including third-party CDN,
+  auth, and analytics domains you may not know about in advance; scoping
+  observation to a hand-typed domain would silently miss exactly those. This
+  permission is requested at runtime via Chrome's own permission-grant UI
+  (see "Permissions" below) — never granted by default — and you can revoke
+  it at any time from `chrome://extensions`.
+- The "내 서비스 도메인" field does not restrict what's captured; it is only
+  used afterward, locally, to label each captured URL as first- or
+  third-party in the exported result.
 - Only the request **URL** and **timestamp** are recorded. Request/response
   bodies, headers, and cookies are never read or stored.
+- Automated crawling (the optional "자동 크롤" feature) only ever navigates
+  to links on the same host as the page it started from — the `<all_urls>`
+  permission widens what's *observed*, not where the extension automatically
+  clicks around.
 
 ## Where the data goes
 
@@ -44,10 +57,10 @@ into a list of URLs for building an allowlist/whitelist policy.
 
 | Permission | Why |
 |---|---|
-| `webRequest` | Observe request URLs on domains you explicitly grant, to build the capture list. No requests are blocked or modified. |
+| `webRequest` | Observe request URLs once you grant host access, to build the capture list. No requests are blocked or modified. |
 | `storage` | Hold the in-progress capture buffer and your saved domain-pattern preference, locally. |
 | `downloads` | Let you save Result JSON / HAR / CSV / policy.json / SQL export files you generate. |
-| `optional_host_permissions` (`<all_urls>`, requested per-domain at runtime) | The extension has no host access by default. When you click "녹화 시작", it requests permission only for the domain pattern(s) you typed, via Chrome's own permission-grant UI. You can revoke this at any time from `chrome://extensions`. |
+| `optional_host_permissions` (`<all_urls>`, requested at runtime) | The extension has no host access by default. When you click "녹화 시작", it requests `<all_urls>` via Chrome's own permission-grant UI so it can capture every domain the app you're recording depends on (see "What the extension observes" above for why). You can revoke this at any time from `chrome://extensions`. |
 
 ## Third parties
 

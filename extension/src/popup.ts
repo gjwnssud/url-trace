@@ -105,13 +105,19 @@ startBtn.addEventListener("click", () => {
   // click handler's call stack — it requires an active user gesture.
   void (async () => {
     setMessage("", "info");
-    const patterns = parsePatterns(domainsInput.value);
-    if (patterns.length === 0) {
-      setMessage("대상 도메인을 하나 이상 입력하세요.");
-      return;
-    }
     try {
-      const granted = await chrome.permissions.request({ origins: patterns });
+      // Request <all_urls> rather than only the patterns typed into "대상
+      // 도메인" — this tool exists to build a *complete* URL inventory for a
+      // whitelist policy (CLAUDE.md 재현율 우선), and scoping capture to a
+      // hand-typed pattern silently misses exactly what matters most for
+      // that: third-party CDN/auth/analytics domains the target app depends
+      // on but the user didn't think to list. classify (WASM) still splits
+      // 1st vs 3rd party afterward using the domain field below, so nothing
+      // about that distinction is lost by capturing more broadly. Auto-crawl
+      // navigation itself stays restricted to the seed's own host (see
+      // background.ts) — this only widens what's *observed*, not where the
+      // extension automatically clicks around.
+      const granted = await chrome.permissions.request({ origins: ["<all_urls>"] });
       if (!granted) {
         setMessage("권한이 승인되지 않아 녹화를 시작할 수 없습니다.");
         return;
