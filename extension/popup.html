@@ -53,11 +53,13 @@
     <p class="tagline">앱을 평소처럼 사용하는 동안 실제 요청을 관찰합니다. 쿠키 주입·중복 로그인 없음.</p>
 
     <label for="domains">내 서비스 도메인 (선택, 쉼표로 구분)</label>
-    <input id="domains" type="text" placeholder="https://app.example.com/*, app2.example.com" />
+    <input id="domains" type="text" placeholder="app.example.com, app2.example.com" />
     <p class="hint">
-      캡처 범위를 제한하지 않습니다 — "녹화 시작"을 누르면 모든 요청을 관찰할 수 있는
-      권한을 요청해, 대상 앱이 의존하는 서드파티(CDN·인증·애널리틱스)까지 빠짐없이
-      잡습니다. 여기 입력한 도메인은 내보내기 시 1st/3rd-party 구분에만 쓰입니다.
+      캡처 범위나 크롤 시작점과는 무관합니다 — 내보내기(Result JSON/CSV) 시 각 URL을
+      1st-party(내 서비스)/3rd-party(외부)로 라벨링하는 데만 쓰이는 힌트입니다.
+      비워두면 모든 URL이 "unknown"으로 표시됩니다. (참고: "녹화 시작"을 누르면 이
+      입력값과 무관하게 모든 요청을 관찰할 수 있는 권한을 요청해, 대상 앱이 의존하는
+      서드파티(CDN·인증·애널리틱스)까지 빠짐없이 잡습니다.)
     </p>
 
     <div class="crawl-row">
@@ -67,7 +69,12 @@
       <span class="num-label">최대 페이지</span>
       <input id="crawlMaxPages" type="number" min="1" max="500" value="50" />
     </div>
-    <p class="hint">체크하면 현재 탭 URL부터 같은 호스트 링크를 자동으로 따라가며 캡처합니다(별도 탭에서, 로그인 세션 그대로 사용).</p>
+    <p class="hint">
+      체크하면 <strong>위 도메인 입력란과 무관하게</strong>, "녹화 시작"을 누르는 순간
+      현재 활성 탭의 URL부터 같은 호스트 링크를 자동으로 따라가며 캡처합니다(별도
+      탭에서, 로그인 세션 그대로 사용). 로그인이 필요한 페이지는 먼저 그 탭에서
+      로그인해서 원하는 시작 화면까지 이동한 뒤 눌러주세요.
+    </p>
 
     <div class="row">
       <button id="startBtn">녹화 시작</button>

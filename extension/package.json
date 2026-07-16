@@ -1,6 +1,6 @@
 {
   "name": "url-trace-extension",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Chrome extension companion to the url-trace CLI: captures real network requests via chrome.webRequest and runs them through the same Go pipeline (compiled to WASM) that the CLI uses.",
   "type": "module",
